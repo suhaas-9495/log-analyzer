@@ -4,7 +4,7 @@ For each seed, checks that every injected incident is detected with the right ro
 and counts any additional alerts. Used to validate tuning against random data rather than
 only the provided samples.
 
-    python scripts/robustness.py --seeds 10 --lines 50000
+    python scripts/robustness.py --seeds 12 --lines 50000
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ EXPECTED = {
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--seeds", type=int, default=10)
+    parser.add_argument("--seeds", type=int, default=12)
     parser.add_argument("--lines", type=int, default=50_000)
     parser.add_argument("--config", default="configs/config.yaml")
     args = parser.parse_args()

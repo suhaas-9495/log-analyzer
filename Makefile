@@ -85,8 +85,8 @@ demo: install ## Scripted end-to-end demo (scenarios, streaming, JSON, API)
 bench: install ## Throughput / memory benchmark on generated data (LINES=...)
 	$(BIN)/python scripts/benchmark.py --lines $(LINES)
 
-robustness: install ## Detection accuracy across 10 randomly generated datasets
-	$(BIN)/python scripts/robustness.py --seeds 10
+robustness: install ## Detection accuracy across 12 randomly generated datasets
+	$(BIN)/python scripts/robustness.py --seeds 12
 
 report: install data ## Regenerate reports/ for the provided sample logs
 	@mkdir -p $(REPORTS)

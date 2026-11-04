@@ -248,7 +248,7 @@ below 85%). `make check` adds `ruff` lint/format and `mypy --strict`.
   4. 100k lines in a subprocess, under 5 s and 100 MB, with correct alerts and at least 95% noise reduction.
 - **Provided samples:** both files produce exactly the expected incidents, with the right roots and the spec output format ([`test_sample_logs.py`](tests/integration/test_sample_logs.py)).
 - **Unit tests per module:** parsers (including garbled and edge-case input), config validation (about 50 invalid configs), classifier, detectors, correlation rules, root-cause analysis, rule DSL, alert format, engine statistics, CLI (stdin, gzip, multi-file merge, exit codes), HTTP API (real server, error codes), generator, and plugins.
-- **Robustness:** `make robustness` generates 10 random datasets and checks that every injected incident is found with the right root cause. Results are in DESIGN.md.
+- **Robustness:** `make robustness` generates 12 random datasets and checks that every injected incident is found with the right root cause. Results are in DESIGN.md.
 
 ## Build targets
 
