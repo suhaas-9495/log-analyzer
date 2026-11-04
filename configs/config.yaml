@@ -1,0 +1,20 @@
+analyzer:
+  services:
+    - {name: api-gateway, critical: true, dependencies: [auth-service, payment-service, inventory-service, order-service, user-service, search-service, recommendation-service, notification-service], expected_error_rate: 0.1}
+    - {name: web-app, critical: true, dependencies: [api-gateway, payment-service, order-service], expected_error_rate: 0.5}
+    - {name: payment-service, critical: true, dependencies: [database, payment-provider], expected_error_rate: 0.05, aliases: [payment]}
+    - {name: payment-provider, critical: true, aliases: ["payment provider", "payment gateway"], expected_error_rate: 0.5}
+    - {name: order-service, critical: true, dependencies: [database, payment-service, inventory-service], expected_error_rate: 0.1, aliases: [order]}
+    - {name: inventory-service, dependencies: [database], expected_error_rate: 0.1, aliases: [inventory]}
+    - {name: user-service, dependencies: [database], expected_error_rate: 0.1}
+    - {name: auth-service, critical: true, dependencies: [database, user-service], expected_error_rate: 0.1}
+    - {name: search-service, dependencies: [database], expected_error_rate: 0.5}
+    - {name: recommendation-service, dependencies: [database, search-service], expected_error_rate: 1.0}
+    - {name: notification-service, dependencies: [database], expected_error_rate: 1.0}
+    - {name: analytics-service, dependencies: [database], expected_error_rate: 1.0}
+    - {name: database, critical: true, expected_error_rate: 0.01, aliases: [db]}
+  filters:
+    min_level: INFO
+    ignore_services: ["dev-*", "localhost", "test-*", "debug-*"]
+  parsers:
+    app_channel_services: {production: web-app}

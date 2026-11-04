@@ -1,0 +1,355 @@
+# Built-in rule library, merged underneath every user config.
+#
+# Scalar defaults (windows, thresholds, limits, ...) live in config/schema.py so there is a
+# single source of truth; this file only holds the data-heavy parts: pattern rules, metric
+# extractors, alert rules and noise filters. Users override any entry by `name`, remove one
+# with `enabled: false`, and their own new entries are evaluated before these.
+#
+# Pattern rules are evaluated in order and the first match wins, so specific rules come first.
+# Capture-group conventions (named groups):
+#   target_service -> the dependency this line implicates (used for correlation / RCA)
+#   timeout_ms     -> the failure started this long before the line was logged
+#   value          -> numeric value compared against `threshold`
+
+patterns:
+  - name: memory_exhaustion
+    keywords: ["OutOfMemoryError", "memory exhausted", "heap space", "out of memory", "OOMKilled"]
+    severity: CRITICAL
+    category: resource
+    min_occurrences: 1
+    title: "Memory Exhaustion"
+    probable_cause: "Process ran out of memory"
+    actions:
+      - "Check heap/RSS usage and memory growth for the service"
+      - "Look for memory leaks introduced by recent deployments"
+      - "Raise memory limits or scale out as a stop-gap"
+
+  - name: db_pool_exhausted
+    regex: '(?i)\bpool (?:is )?exhausted\b'
+    severity: HIGH
+    category: resource
+    target: database
+    title: "Database Connection Pool Exhausted"
+    probable_cause: "Database connection pool exhausted"
+    actions:
+      - "Increase the database connection pool size (and the DB's max_connections)"
+      - "Check for connection leaks: connections not returned to the pool"
+      - "Find long-running queries or transactions holding connections"
+      - "Review recent deployments for connection handling changes"
+
+  - name: db_pool_saturation
+    regex: '(?i)\bpool nearly exhausted\b'
+    severity: MEDIUM
+    category: resource
+    title: "Database Connection Pool Near Capacity"
+    probable_cause: "Database connection pool near capacity"
+    actions:
+      - "Find what is holding connections (slow queries, leaks, traffic spike)"
+      - "Increase pool size before it is exhausted"
+
+  - name: db_connection_failure
+    regex: '(?i)database connection (?:failed|refused|lost|error)|(?:failed to acquire|cannot get|could not get|unable to acquire) (?:a )?(?:database |db )?connection|(?:cannot|could not|unable to) connect to (?:the )?(?:database|db)\b'
+    severity: HIGH
+    category: dependency
+    target: database
+    title: "Database Connection Failures"
+    probable_cause: "Database unreachable or out of connections"
+    actions:
+      - "Check database health, connection count and failover status"
+      - "Verify network connectivity and credentials from the affected services"
+
+  - name: too_many_connections
+    regex: '(?i)\btoo many connections\b'
+    severity: MEDIUM
+    category: resource
+    target: database
+    title: "Database Connection Limit Reached"
+    probable_cause: "Database max_connections reached"
+    actions:
+      - "Check which clients hold connections; look for leaks or missing pooling"
+      - "Raise max_connections or add a connection pooler (e.g. PgBouncer/ProxySQL)"
+
+  - name: deadlock
+    regex: '(?i)\bdeadlock\b'
+    severity: MEDIUM
+    category: resource
+    target: database
+    title: "Database Deadlocks"
+    probable_cause: "Conflicting transactions deadlocking"
+    actions:
+      - "Inspect the database deadlock log for the conflicting statements"
+      - "Make transactions acquire locks in a consistent order"
+
+  - name: health_check_failed
+    regex: '(?i)health ?check (?:failed|failing)'
+    severity: HIGH
+    category: availability
+    title: "Health Checks Failing"
+    probable_cause: "Health checks failing - service down or unreachable"
+    actions:
+      - "Check the service's process, dependencies and recent deployments"
+      - "Restart or fail over unhealthy instances"
+
+  # --- from the problem statement ---------------------------------------------------------
+  - name: connection_timeout
+    regex: '(?i)connection timeout to (?P<target_service>[\w-]+)(?: after (?P<timeout_ms>\d+)\s?ms\b)?'
+    severity: HIGH
+    category: dependency
+    group_by: [service, target_service]
+    title: "Connection Timeouts"
+    probable_cause: "Downstream service not responding within the client timeout"
+    actions:
+      - "Check health and saturation of the target service"
+      - "Verify timeouts/retries are not amplifying load (retry storms)"
+
+  - name: upstream_not_responding
+    regex: '(?i)upstream service (?P<target_service>[\w-]+) not responding'
+    severity: HIGH
+    category: dependency
+    group_by: [service, target_service]
+    title: "Upstream Service Not Responding"
+    probable_cause: "Upstream service not responding"
+    actions:
+      - "Check health, recent deploys and resource usage of the upstream service"
+
+  - name: connect_failure
+    regex: '(?i)(?:failed|unable|could not|cannot) (?:to )?connect to (?P<target_service>[\w-]+)'
+    severity: HIGH
+    category: dependency
+    group_by: [service, target_service]
+    title: "Connection Failures"
+    probable_cause: "Downstream dependency unreachable"
+    actions:
+      - "Check that the target is up and reachable (DNS, network policy, ports)"
+
+  - name: connection_refused
+    regex: '(?i)connection refused|ECONNREFUSED'
+    severity: HIGH
+    category: dependency
+    title: "Connections Refused"
+    probable_cause: "Dependency is down (connection refused)"
+    actions:
+      - "Check whether the dependency's process/pods are running and listening"
+      - "Fail over or enable a circuit breaker / fallback for the dependency"
+
+  - name: connection_attempt_timeout
+    regex: '(?i)connection attempt timed out|connect(?:ion)? timed out'
+    severity: MEDIUM
+    category: dependency
+    title: "Connection Attempts Timing Out"
+    probable_cause: "Dependency slow to accept connections"
+    actions:
+      - "Check the dependency's accept queue, CPU and network path"
+
+  - name: service_unavailable
+    regex: '(?i)\b(?:unavailable|not responding|unreachable|service error)\b'
+    severity: HIGH
+    category: dependency
+    title: "Dependency Unavailable"
+    probable_cause: "Dependency unavailable"
+    actions:
+      - "Identify the failing dependency and check its health"
+      - "Enable fallbacks / circuit breakers to contain the blast radius"
+
+  - name: retry_attempt
+    regex: '(?i)\bretry(?:ing)? attempt (?P<attempt>\d+)\s*/\s*(?P<max_attempts>\d+)'
+    severity: LOW
+    category: dependency
+    title: "Retries"
+    probable_cause: "Calls to a dependency are being retried"
+    actions:
+      - "Check the dependency being retried; cap retries with backoff and jitter"
+
+  - name: request_timeout
+    regex: '(?i)request time(?:d)? ?out(?: after (?P<timeout_ms>\d+)\s?ms\b)?'
+    severity: HIGH
+    category: availability
+    title: "Request Timeouts"
+    probable_cause: "Requests exceeding their timeout"
+    actions:
+      - "Check latency of the service and its dependencies"
+      - "Look for saturation (CPU, threads, connection pools)"
+
+  - name: database_slow_query
+    regex: '(?i)(?:query took|slow query(?: detected)?:?)\s*(?P<value>\d+(?:\.\d+)?)\s?ms\b'
+    field: execution_time_ms
+    threshold: 1000
+    severity: MEDIUM
+    category: performance
+    min_level: INFO
+    target: database
+    title: "Slow Database Queries"
+    probable_cause: "Slow database queries"
+    actions:
+      - "Review the slow query log and query plans (missing indexes, full scans)"
+      - "Check database CPU, I/O and lock contention"
+
+  - name: query_timeout
+    regex: '(?i)query time(?:d)? ?out(?: after (?P<timeout_ms>\d+)\s?ms\b)?'
+    severity: MEDIUM
+    category: performance
+    target: database
+    title: "Database Query Timeouts"
+    probable_cause: "Database queries timing out"
+    actions:
+      - "Review slow queries and database load"
+
+  - name: slow_request
+    regex: '(?i)(?:request took|response time degraded to|(?:request|query) (?:processed|completed|executed) in)\s*(?P<value>\d+(?:\.\d+)?)\s?ms\b'
+    threshold: 1000
+    severity: MEDIUM
+    category: performance
+    min_level: INFO
+    title: "Slow Requests"
+    probable_cause: "Requests exceeding the latency threshold"
+    actions:
+      - "Profile the slow endpoint and check its dependencies' latency"
+
+  - name: high_memory_usage
+    regex: '(?i)memory usage(?: detected)?:?\s*(?:at |is )?(?P<value>\d+(?:\.\d+)?)\s?%'
+    threshold: 90
+    value_range: [0, 100]
+    severity: MEDIUM
+    category: resource
+    title: "High Memory Usage"
+    probable_cause: "Memory pressure"
+    actions:
+      - "Check for memory leaks and recent traffic growth"
+
+  - name: high_cpu_usage
+    regex: '(?i)cpu usage(?: at| is)?:?\s*(?P<value>\d+(?:\.\d+)?)\s?%'
+    threshold: 90
+    value_range: [0, 100]
+    severity: MEDIUM
+    category: resource
+    title: "High CPU Usage"
+    probable_cause: "CPU saturation"
+    actions:
+      - "Check for hot loops, traffic spikes or noisy neighbours; scale out"
+
+  - name: auth_failure
+    regex: '(?i)authentication failed|token validation failed|invalid token|unauthori[sz]ed|permission denied|access denied|forbidden'
+    severity: MEDIUM
+    category: security
+    title: "Authentication / Authorization Failures"
+    probable_cause: "Authentication or authorization failures"
+    actions:
+      - "Check the auth provider and token signing keys / expiry"
+      - "Look for credential stuffing or misconfigured clients"
+
+  - name: rate_limited
+    regex: '(?i)rate limit(?:ed| exceeded)'
+    severity: LOW
+    category: application
+    title: "Rate Limiting"
+    probable_cause: "Clients exceeding rate limits"
+    actions:
+      - "Identify the throttled clients; check for retry storms or abuse"
+
+  - name: unhandled_exception
+    regex: '(?i)unhandled exception|null ?pointer|NullPointerException|uncaught|\bpanic:|segmentation fault|stack ?overflow'
+    severity: MEDIUM
+    category: application
+    title: "Unhandled Exceptions"
+    probable_cause: "Application bug (unhandled exception)"
+    actions:
+      - "Check stack traces and recent deployments; roll back if newly introduced"
+
+  - name: invalid_request
+    regex: '(?i)invalid request|bad request|validation (?:failed|error)|malformed'
+    severity: LOW
+    category: application
+    title: "Invalid Requests"
+    probable_cause: "Clients sending invalid requests"
+    actions:
+      - "Check recent client/API contract changes"
+
+  - name: resource_not_found
+    regex: '(?i)file not found|no such file|resource not found'
+    severity: LOW
+    category: application
+    title: "Missing Resources"
+    probable_cause: "Missing file or resource"
+    actions:
+      - "Verify deployment artifacts and configuration paths"
+
+  # --- from the problem statement: evaluated on incidents, not single lines ----------------
+  - name: cascading_failure
+    condition: multiple_services_failing_within_30_seconds
+    severity: CRITICAL
+    category: availability
+    actions:
+      - "Fix the root-cause service first; dependents should recover on their own"
+      - "Shed load / open circuit breakers on dependents to stop retry amplification"
+
+metrics:
+  - name: request_latency
+    kind: latency
+    label: request latency
+    prefilter: "ms"
+    regex:
+      - '(?i)\b(?:request|query|call)\s+(?:processed|completed|executed|served)\s+in\s+(?P<value>\d+(?:\.\d+)?)\s?ms\b'
+      - '(?i)\brequest took (?P<value>\d+(?:\.\d+)?)\s?ms\b'
+      - '(?i)\bresponse time (?:degraded to |is |of )?(?P<value>\d+(?:\.\d+)?)\s?ms\b'
+    fields: [duration_ms, response_time_ms, latency_ms]
+
+  - name: db_query_time
+    kind: latency
+    label: database query time
+    prefilter: "query"
+    regex:
+      - '(?i)\bslow query(?: detected)?:?\s*(?P<value>\d+(?:\.\d+)?)\s?ms\b'
+      - '(?i)\bquery took (?P<value>\d+(?:\.\d+)?)\s?ms\b'
+    fields: [execution_time_ms, query_time_ms]
+
+  - name: connection_pool_utilization
+    kind: utilization
+    label: connection pool utilization
+    prefilter: "pool"
+    regex:
+      - '(?i)\bconnection pool:?\s*(?P<used>\d+)\s*/\s*(?P<capacity>\d+)'
+    fields: [active_connections, max_connections]
+
+# The two rules from the problem statement.
+alert_rules:
+  - name: "Database Connection Crisis"
+    condition:
+      all:
+        - pattern: "connection pool exhausted"
+        - affected_services: ">3"
+    severity: CRITICAL
+    auto_escalate: true
+
+  - name: "API Gateway Cascade"
+    condition:
+      all:
+        - service: "api-gateway"
+        - error_rate: ">5%"
+        - duration: ">60s"
+    severity: HIGH
+
+# From the problem statement.
+ignore_patterns:
+  - "Health check endpoint"
+  - "Metrics collection"
+  - "DEBUG.*development"
+
+correlation:
+  # An unclassified error containing one of these is treated as a dependency failure, and
+  # the services it mentions (by name or configured alias) become correlation evidence.
+  dependency_keywords:
+    - timeout
+    - timed out
+    - unavailable
+    - refused
+    - not responding
+    - unreachable
+    - failed to connect
+    - cannot connect
+    - connection reset
+    - connection failed
+    - failed
+    - cannot process
+    - service error
+    - downstream
+    - upstream

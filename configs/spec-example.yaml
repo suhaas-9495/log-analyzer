@@ -1,0 +1,55 @@
+# Verbatim copy of the example configuration from the problem statement.
+# It must load without modification (see tests/unit/test_config.py); everything it does not
+# specify (pattern library, metric extractors, ...) falls back to the built-in defaults.
+analyzer:
+  # Time windows for analysis
+  windows:
+    error_rate_baseline: 300  # 5 minutes
+    alert_grouping: 60        # 1 minute
+    pattern_detection: 30     # 30 seconds
+
+  # Thresholds
+  thresholds:
+    error_rate_multiplier: 3   # Alert if 3x baseline
+    min_occurrences: 3         # Min errors before alerting
+    performance_degradation_ms: 1000
+
+  # Services configuration
+  services:
+    - name: api-gateway
+      critical: true
+      dependencies: [auth-service, payment-service, inventory-service]
+      expected_error_rate: 0.1  # 0.1%
+    - name: payment-service
+      critical: true
+      dependencies: [database, payment-provider-api]
+      expected_error_rate: 0.05
+    - name: background-worker
+      critical: false
+      dependencies: [database, message-queue]
+      expected_error_rate: 1.0  # Higher tolerance
+
+  # Alert rules
+
+  alert_rules:
+    - name: "Database Connection Crisis"
+      condition:
+        all:
+          - pattern: "connection pool exhausted"
+          - affected_services: ">3"
+      severity: CRITICAL
+      auto_escalate: true
+
+    - name: "API Gateway Cascade"
+      condition:
+        all:
+          - service: "api-gateway"
+          - error_rate: ">5%"
+          - duration: ">60s"
+      severity: HIGH
+
+  # Ignore rules (reduce noise)
+  ignore_patterns:
+    - "Health check endpoint"
+    - "Metrics collection"
+    - "DEBUG.*development"

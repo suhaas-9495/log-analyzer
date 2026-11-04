@@ -1,0 +1,95 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "log-analyzer"
+version = "1.0.0"
+description = "Intelligent log analyzer: parses multi-format logs, detects anomalies, correlates failures and emits deduplicated, root-caused alerts."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+    "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<10",
+    "pytest-cov>=5.0,<8",
+    "ruff>=0.6,<1",
+    "mypy>=1.10,<3",
+    "types-PyYAML>=6.0",
+    "build>=1.2,<2",
+]
+
+[project.scripts]
+log-analyzer = "log_analyzer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+log_analyzer = ["config/defaults.yaml", "py.typed"]
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "perf: performance/acceptance tests (Scenario 4: 100k lines < 5s, < 100MB)",
+]
+
+# -------------------------------------------------------------- coverage
+[tool.coverage.run]
+source = ["log_analyzer"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+
+# ------------------------------------------------------------------ ruff
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # bugbear
+    "UP",       # pyupgrade
+    "SIM",      # simplify
+    "C4",       # comprehensions
+    "RET",      # return statements
+    "PIE",
+    "PL",       # pylint subset
+    "S",        # bandit security checks
+    "PT",       # pytest style
+    "RUF",
+]
+ignore = [
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915",  # complexity counts are reviewed manually
+    "PLR2004",  # magic values in comparisons are fine for well-named thresholds
+    "S104",     # binding to 0.0.0.0 is intentional for the containerised API
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S603", "S607", "PLC0415", "PLR2004"]
+
+# ------------------------------------------------------------------ mypy
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["src/log_analyzer"]

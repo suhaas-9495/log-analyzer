@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Generated data / reports
+data/generated/
+data/sample/large_test_logs.txt
+reports/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
