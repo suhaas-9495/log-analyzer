@@ -717,6 +717,7 @@ def _build_api(s: _Section) -> ApiConfig:
         port=s.integer("port", d.port, minimum=0),
         max_body_bytes=s.integer("max_body_bytes", d.max_body_bytes, minimum=1024),
         max_lines=s.integer("max_lines", d.max_lines, minimum=1),
+        metrics_enabled=s.boolean("metrics_enabled", d.metrics_enabled),
     )
     s.finish()
     if cfg.port > 65535:

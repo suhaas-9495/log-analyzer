@@ -124,11 +124,13 @@ curl -s -X POST http://localhost:8080/analyze \
   -H "Content-Type: application/json" \
   -d '{"logs": ["2024-01-10 10:01:15 ERROR [payment-service] Connection pool exhausted"], "window": "5m"}'
 curl -s http://localhost:8080/health
+curl -s http://localhost:8080/metrics     # Prometheus counters for the analyzer itself
 ```
 
 - The response is the same JSON report as `--format json`.
 - Bodies and line counts are capped by `api.max_body_bytes` and `api.max_lines`.
 - Invalid input returns `400`, `411` or `413` with a JSON error.
+- `GET /metrics` exposes the server's own health in the Prometheus text format: requests by route and status, lines received, logs analyzed, unparsed lines, alerts by severity, and an analysis-latency histogram. Scrape it with Prometheus and graph it in Grafana to "alert on the alerter". Turn it off with `api.metrics_enabled: false`.
 
 **Exit codes:**
 - `0`: OK.
@@ -308,7 +310,7 @@ src/log_analyzer/
   correlation/           correlator (incidents, lifecycle, noise), rca, rules (DSL), topology
   alerts/builder.py      alert title/summary/evidence/actions, spec JSON format
   output/                console dashboard + live events, JSON report
-  api/server.py          POST /analyze, GET /health
+  api/                   server.py: POST /analyze, GET /health; metrics.py: GET /metrics (Prometheus)
   testdata/generator.py  deterministic multi-format log generator with injected incidents
 configs/                 config.yaml, spec-example.yaml, examples/
 data/sample/             the provided sample logs (100k zipped; `make data` unpacks)

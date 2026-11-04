@@ -10,7 +10,8 @@ from typing import Any
 
 import pytest
 
-from log_analyzer.api.server import ApiError, analyze_payload, create_server
+from log_analyzer.api.metrics import CONTENT_TYPE, LATENCY_BUCKETS, ServerMetrics
+from log_analyzer.api.server import ROUTES, ApiError, analyze_payload, create_server
 from log_analyzer.config import AnalyzerConfig, build_config
 from log_analyzer.testdata.generator import SCENARIOS, GeneratorSettings, generate, iter_lines
 from tests.conftest import FIXTURES
@@ -121,6 +122,83 @@ def test_http_requires_content_length(server: tuple[str, int]) -> None:
     response = conn.getresponse()
     assert response.status == 411
     conn.close()
+
+
+def test_error_responses_close_the_connection(server: tuple[str, int]) -> None:
+    # A rejected body is never read; keeping the socket open would parse it as a request.
+    conn = http.client.HTTPConnection(*server, timeout=10)
+    conn.request("POST", "/analyze", body=b"x" * 5000)
+    response = conn.getresponse()
+    response.read()
+    assert (response.status, response.getheader("Connection")) == (413, "close")
+    conn.close()
+
+
+def get_text(target: tuple[str, int], path: str) -> tuple[int, str, str]:
+    conn = http.client.HTTPConnection(*target, timeout=10)
+    conn.request("GET", path)
+    response = conn.getresponse()
+    text = response.read().decode()
+    conn.close()
+    return response.status, response.getheader("Content-Type") or "", text
+
+
+def metric(text: str, sample: str) -> float:
+    """Value of one exposition line, e.g. ``log_analyzer_alerts_total{severity="CRITICAL"}``."""
+    for line in text.splitlines():
+        if line.startswith(sample + " "):
+            return float(line.rsplit(" ", 1)[1])
+    raise AssertionError(f"{sample} not in /metrics output")
+
+
+def test_metrics_endpoint_counts_requests_and_analyses(server: tuple[str, int]) -> None:
+    body = json.dumps({"logs": [*SCENARIO1, "", "not a log line"]}).encode()
+    assert request(server, "POST", "/analyze", body)[0] == 200
+    assert request(server, "GET", "/nope")[0] == 404
+    status, content_type, text = get_text(server, "/metrics?debug=1")
+    assert status == 200
+    assert content_type == CONTENT_TYPE
+    p = "log_analyzer_"
+    assert (
+        metric(text, f'{p}http_requests_total{{method="POST",route="/analyze",status="200"}}') == 1
+    )
+    assert metric(text, f'{p}http_requests_total{{method="GET",route="other",status="404"}}') == 1
+    assert metric(text, f"{p}lines_received_total") == len(SCENARIO1) + 2
+    assert metric(text, f"{p}logs_analyzed_total") == len(SCENARIO1) + 1  # blank line skipped
+    assert metric(text, f"{p}unparsed_lines_total") == 1
+    assert metric(text, f'{p}alerts_total{{severity="CRITICAL"}}') == 1
+    assert metric(text, f'{p}analysis_duration_seconds_bucket{{le="+Inf"}}') == 1
+    assert metric(text, f"{p}analysis_duration_seconds_count") == 1
+    assert "# TYPE log_analyzer_analysis_duration_seconds histogram" in text
+    assert 'log_analyzer_build_info{version="' in text
+
+
+def test_metrics_endpoint_can_be_disabled() -> None:
+    cfg = build_config({"api": {"port": 0, "metrics_enabled": False}})
+    srv = create_server(cfg, host="127.0.0.1")
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = srv.server_address[:2]
+        assert get_text((str(host), int(port)), "/metrics")[0] == 404
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_latency_histogram_is_cumulative() -> None:
+    m = ServerMetrics(ROUTES, clock=lambda: 1_700_000_000.0)
+    report = {"statistics": {"total_logs": 1}, "alerts": []}
+    for seconds in (0.001, 0.3, 0.3, 99.0):  # the last one is above every bucket
+        m.observe_analysis(1, report, seconds)
+    text = m.render()
+    assert metric(text, 'log_analyzer_analysis_duration_seconds_bucket{le="0.005"}') == 1
+    assert metric(text, 'log_analyzer_analysis_duration_seconds_bucket{le="0.5"}') == 3
+    last = f'log_analyzer_analysis_duration_seconds_bucket{{le="{LATENCY_BUCKETS[-1]:g}"}}'
+    assert metric(text, last) == 3
+    assert metric(text, 'log_analyzer_analysis_duration_seconds_bucket{le="+Inf"}') == 4
+    assert metric(text, "log_analyzer_analysis_duration_seconds_sum") == pytest.approx(99.601)
+    assert metric(text, "log_analyzer_start_time_seconds") == 1_700_000_000.0
 
 
 # ---------------------------------------------------------------------------- generator

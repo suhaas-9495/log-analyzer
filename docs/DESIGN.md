@@ -506,7 +506,7 @@ the first stages see full volume.
 - Close windows on the watermark, not wall time; handle late data explicitly.
 
 **Operations**
-- Expose the analyzer's own metrics (lines/s, lag, unparsed rate, open incidents, alert rate) to Prometheus, and alert on the alerter.
+- Expose the analyzer's own metrics to Prometheus and alert on the alerter. The API already serves `GET /metrics` (requests by route and status, lines received, logs analyzed, unparsed lines, alerts by severity, an analysis-latency histogram). A streaming deployment would add consumer lag and open incidents.
 - Config changes go through CI (`validate-config`) and canary.
 - If profiling shows the CPU hot path dominates, port parse and classify to Go or Rust, or run under PyPy. The rest (correlation, RCA, alerting) is signal-volume and stays in Python.
 

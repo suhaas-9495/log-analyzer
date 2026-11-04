@@ -25,6 +25,10 @@ for alert in report["alerts"]:
     print("[" + alert["severity"] + "] " + alert["title"])
 '
 
+step "3b. OpenTelemetry logs - Scenario 1 as OTLP/JSON (same CRITICAL alert, same root cause)"
+log-analyzer --file tests/fixtures/scenario1_cascade_otel.jsonl --config "$CONFIG" --color never \
+  | grep -E '^(Logs Processed|\[CRITICAL\])|Root Cause'
+
 step "4. Live stream (stdin): the 10k sample piped in, alerts printed as they happen"
 cat data/sample/test_logs.txt | log-analyzer --config "$CONFIG" --color never \
   | grep -E '^\[[0-9:]+\] (NEW|RESOLVED)'
@@ -72,4 +76,7 @@ a = report["alerts"][0]
 print(f'{a["alert_id"]} [{a["severity"]}] {a["title"]} -> root cause {a["root_cause_service"]} '
       f'({a["root_cause_analysis"]["confidence"]:.0%})')
 PY
+
+step "9. HTTP API: GET /metrics (the analyzer's own health, Prometheus format)"
+curl -fs "http://127.0.0.1:$PORT/metrics" | grep -E '^log_analyzer_(http_requests|logs_analyzed|alerts)_total'
 step "Done."

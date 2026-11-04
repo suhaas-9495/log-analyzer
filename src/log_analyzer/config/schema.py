@@ -224,6 +224,7 @@ class ApiConfig:
     port: int = 8080
     max_body_bytes: int = 10 * 1024 * 1024
     max_lines: int = 200_000
+    metrics_enabled: bool = True  # GET /metrics (Prometheus text format)
 
 
 @dataclass(frozen=True, slots=True)

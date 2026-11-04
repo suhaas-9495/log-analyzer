@@ -2,10 +2,12 @@
 
     POST /analyze   {"logs": ["line 1", "line 2"], "window": "5m"}  -> JSON report
     GET  /health    liveness/readiness probe
+    GET  /metrics   Prometheus counters for the server itself (``api.metrics_enabled``)
 
 Each request is analyzed by a fresh, independent :class:`Analyzer` (the configuration is
-immutable and shared), so the threaded server needs no locking. Request bodies and line
-counts are capped by ``api.max_body_bytes`` / ``api.max_lines``.
+immutable and shared), so the analysis needs no locking; only the small metrics registry
+is shared, behind a lock. Request bodies and line counts are capped by
+``api.max_body_bytes`` / ``api.max_lines``.
 
 The standard-library server keeps the image dependency-free; behind an ingress it is
 adequate for this endpoint. A high-volume deployment would put the same ``Analyzer``
@@ -24,12 +26,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from log_analyzer import __version__
+from log_analyzer.api.metrics import CONTENT_TYPE, ServerMetrics
 from log_analyzer.config.schema import AnalyzerConfig
 from log_analyzer.engine import Analyzer
 from log_analyzer.output.report import report_dict
 from log_analyzer.timeutil import parse_duration
 
 log = logging.getLogger("log_analyzer.api")
+
+ROUTES = frozenset({"/analyze", "/health", "/healthz", "/metrics"})
 
 
 class ApiError(Exception):
@@ -66,22 +71,29 @@ def analyze_payload(config: AnalyzerConfig, payload: Any) -> dict[str, Any]:
     return report_dict(analyzer.result(window))
 
 
-def make_handler(config: AnalyzerConfig) -> type[BaseHTTPRequestHandler]:
+def make_handler(config: AnalyzerConfig, metrics: ServerMetrics) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         server_version = f"log-analyzer/{__version__}"
         protocol_version = "HTTP/1.1"
 
+        @property
+        def route(self) -> str:
+            return self.path.split("?", 1)[0]
+
         def do_GET(self) -> None:
-            if self.path in ("/health", "/healthz"):
+            route = self.route
+            if route in ("/health", "/healthz"):
                 self._send(HTTPStatus.OK, {"status": "ok", "version": __version__})
-            elif self.path == "/analyze":
+            elif route == "/metrics" and config.api.metrics_enabled:
+                self._send_bytes(HTTPStatus.OK, metrics.render().encode("utf-8"), CONTENT_TYPE)
+            elif route == "/analyze":
                 self._error(HTTPStatus.METHOD_NOT_ALLOWED, "use POST /analyze")
             else:
-                self._error(HTTPStatus.NOT_FOUND, f"no route for {self.path}")
+                self._error(HTTPStatus.NOT_FOUND, f"no route for {route}")
 
         def do_POST(self) -> None:
-            if self.path != "/analyze":
-                self._error(HTTPStatus.NOT_FOUND, f"no route for {self.path}")
+            if self.route != "/analyze":
+                self._error(HTTPStatus.NOT_FOUND, f"no route for {self.route}")
                 return
             started = time.perf_counter()
             try:
@@ -94,10 +106,12 @@ def make_handler(config: AnalyzerConfig) -> type[BaseHTTPRequestHandler]:
                 log.exception("unhandled error while analyzing request")
                 self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "internal error")
                 return
+            elapsed = time.perf_counter() - started
+            metrics.observe_analysis(len(payload["logs"]), body, elapsed)
             log.info(
-                "analyzed %d lines in %.1fms -> %d alerts",
+                "analyzed %d logs in %.1fms -> %d alerts",
                 body["statistics"]["total_logs"],
-                (time.perf_counter() - started) * 1000,
+                elapsed * 1000,
                 body["statistics"]["alerts_generated"],
             )
             self._send(HTTPStatus.OK, body)
@@ -122,13 +136,21 @@ def make_handler(config: AnalyzerConfig) -> type[BaseHTTPRequestHandler]:
                 raise ApiError(HTTPStatus.BAD_REQUEST, f"invalid JSON: {exc}") from exc
 
         def _error(self, status: HTTPStatus, message: str) -> None:
+            # The request body may be unread (too large, bad length): close the connection
+            # so its bytes are never parsed as a follow-up request on this keep-alive socket.
+            self.close_connection = True
             self._send(status, {"error": message, "status": status.value})
 
         def _send(self, status: HTTPStatus, body: dict[str, Any]) -> None:
-            data = json.dumps(body).encode("utf-8")
+            self._send_bytes(status, json.dumps(body).encode("utf-8"), "application/json")
+
+        def _send_bytes(self, status: HTTPStatus, data: bytes, content_type: str) -> None:
+            metrics.observe_request(self.command, self.route, status.value)
             self.send_response(status)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
+            if self.close_connection:
+                self.send_header("Connection", "close")
             self.end_headers()
             self.wfile.write(data)
 
@@ -139,10 +161,14 @@ def make_handler(config: AnalyzerConfig) -> type[BaseHTTPRequestHandler]:
 
 
 def create_server(
-    config: AnalyzerConfig, host: str | None = None, port: int | None = None
+    config: AnalyzerConfig,
+    host: str | None = None,
+    port: int | None = None,
+    metrics: ServerMetrics | None = None,
 ) -> ThreadingHTTPServer:
+    handler = make_handler(config, metrics or ServerMetrics(ROUTES))
     server = ThreadingHTTPServer(
-        (host or config.api.host, config.api.port if port is None else port), make_handler(config)
+        (host or config.api.host, config.api.port if port is None else port), handler
     )
     server.daemon_threads = True
     return server
