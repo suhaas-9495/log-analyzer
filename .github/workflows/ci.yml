@@ -40,4 +40,4 @@ jobs:
       - name: Build runtime image
         run: docker build -t log-analyzer:latest .
       - name: Smoke test
-        run: docker run --rm log-analyzer:latest --format json | python3 -c "import json,sys; r=json.load(sys.stdin); assert r['statistics']['alerts_generated'] >= 3"
+        run: docker run --rm log-analyzer:latest --file /app/data/sample/test_logs.txt --format json | python3 -c "import json,sys; r=json.load(sys.stdin); assert r['statistics']['alerts_generated'] >= 3"
