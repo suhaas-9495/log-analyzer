@@ -27,22 +27,21 @@ def open_text(path: str | Path) -> TextIO:
     return p.open(encoding="utf-8", errors="replace")
 
 
-def merged_events(paths: list[str], parse: Callable[[str], LogEvent | None]) -> Iterator[LogEvent]:
+def merged_events(paths: list[str], parse: Callable[[str], list[LogEvent]]) -> Iterator[LogEvent]:
     """Yield events from several files in timestamp order (each file assumed ordered).
 
     Logs from different services usually live in different files; merging them by event
-    time is what makes cross-service correlation possible.
+    time is what makes cross-service correlation possible. ``parse`` returns the events
+    in one line (none, one, or several for batch formats).
     """
 
     def stream(index: int, path: str) -> Iterator[tuple[float, int, int, LogEvent]]:
         seq = 0
         with open_text(path) as handle:
             for line in handle:
-                event = parse(line)
-                if event is None:
-                    continue
-                seq += 1
-                yield event.ts, index, seq, event
+                for event in parse(line):
+                    seq += 1
+                    yield event.ts, index, seq, event
 
     streams = [stream(i, p) for i, p in enumerate(paths)]
     for _ts, _index, _seq, event in heapq.merge(*streams):

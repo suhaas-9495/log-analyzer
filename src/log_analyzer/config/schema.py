@@ -171,7 +171,7 @@ class FilterConfig:
 
 @dataclass(frozen=True, slots=True)
 class ParserConfig:
-    enabled: tuple[str, ...] = ("json", "text", "app")
+    enabled: tuple[str, ...] = ("otel", "json", "text", "app")
     plugins: tuple[str, ...] = ()
     default_timezone: str = "UTC"
     app_default_service: str = "app"

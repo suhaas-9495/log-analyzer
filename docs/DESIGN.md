@@ -129,10 +129,11 @@ orchestrator, and the CLI, the HTTP API and the tests all drive the same `Analyz
 
 ### 4.1 Parsing ([`ingest/parsers.py`](../src/log_analyzer/ingest/parsers.py))
 
-- **Registry plus chain.** Built-in `text`, `json` and `app` parsers register by name; `parsers.plugins: ["pkg.mod:Class"]` adds custom formats, which are tried first. A parser returns `None` when a line is not its format.
-- **First-character dispatch.** `{` goes to JSON, `[` to app, a digit to text. The candidate list is cached per first character.
+- **Registry plus chain.** Built-in `otel`, `json`, `text` and `app` parsers register by name; `parsers.plugins: ["pkg.mod:Class"]` adds custom formats, which are tried first. A parser returns `None` when a line is not its format. A batch format may return several events for one line (`parse_batch`).
+- **First-character dispatch.** `{` goes to OpenTelemetry then JSON, `[` to app, a digit to text. The candidate list is cached per first character.
 - **Text format.** Optional milliseconds, optional `RequestID:`, level aliases (`WARNING`, `FATAL`, `ERR`…).
 - **JSON format.** Key names are configurable (`timestamp`/`@timestamp`/`time`, ECS-style `service.name`, …). Nested objects are flattened, and leaf names are also exposed un-prefixed, so `details.active_connections` can be read as `active_connections`.
+- **OpenTelemetry (OTLP/JSON).** Single log records and the OpenTelemetry Collector's export batches (`resourceLogs` → `scopeLogs` → `logRecords`, many records per line). The service is the `service.name` resource attribute; the level comes from `severityText`, else the `severityNumber` range; `body` and attribute `AnyValue`s are unwrapped; nanosecond timestamps fall back to `observedTimeUnixNano`. The trace id becomes the request id, so `estimated_failed_requests` counts distinct failed traces. A cheap substring check keeps ordinary JSON lines from being decoded twice. Counts such as "Logs Processed" are per record, not per physical line.
 - **App (Monolog) format.** The trailing JSON context is parsed into fields, and Monolog's trailing `[]` is removed. The service comes from the context's `service` key, else the channel mapping, else a default.
 - **Robustness.** Bad timestamps and levels make a parser decline the line. Unparsed lines are counted and sampled; stack-trace continuation lines are recognised and counted separately; over-long lines are truncated.
 

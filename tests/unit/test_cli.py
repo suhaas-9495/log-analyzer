@@ -209,3 +209,21 @@ def test_broken_pipe_exits_quietly(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_analyze", boom)
     monkeypatch.setattr("os.dup2", lambda *_args: None)
     assert cli.main(["-f", SCENARIO1]) == 0
+
+
+def test_opentelemetry_logs_give_the_same_alert_as_text(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Scenario 1 as OTLP/JSON: three single records, then one Collector export batch
+    # holding the four error records from four services.
+    otel = str(FIXTURES / "scenario1_cascade_otel.jsonl")
+    code, out, _ = run(capsys, "-f", otel, "-c", str(CONFIG_PATH), "--format", "json")
+    assert code == 0
+    report = json.loads(out)
+    assert report["statistics"]["formats"] == {"otel": 7}
+    assert report["statistics"]["total_logs"] == 7  # records, not the 4 physical lines
+    (alert,) = report["alerts"]
+    assert alert["severity"] == "CRITICAL"
+    assert alert["title"] == "Database Connection Crisis"
+    assert alert["root_cause_service"] == "database"
+    assert alert["impact"]["estimated_failed_requests"] == 1  # all four share one trace

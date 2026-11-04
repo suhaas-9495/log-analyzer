@@ -59,7 +59,7 @@ class ConsoleRenderer:
         lines.append(_LIGHT)
         stats = result.stats
         lines += [
-            f"{'Logs Processed:':<24}{stats.lines_read - stats.blank_lines:,}",
+            f"{'Logs Processed:':<24}{stats.total_logs:,}",
             f"{'Errors Detected:':<24}{result.window_errors:,}",
             f"{'Alerts Generated:':<24}{len(result.alerts):,}",
             f"{'Noise Reduction:':<24}{result.noise_reduction:.1f}%",

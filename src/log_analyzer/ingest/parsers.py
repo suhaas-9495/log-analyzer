@@ -1,11 +1,12 @@
 """Log line parsers.
 
-Three formats are supported out of the box (all three appear interleaved in the sample
-data, so detection is per line, not per file):
+Four formats are supported out of the box. The first three appear interleaved in the
+sample data, so detection is per line, not per file:
 
 * ``text`` - ``2024-01-10 10:15:23.456 ERROR [api-gateway] RequestID:abc123 message``
 * ``json`` - one JSON object per line with timestamp/level/service/message keys
 * ``app``  - Monolog/Laravel style ``[2024-01-10 10:15:26] production.ERROR: msg {json}``
+* ``otel`` - OpenTelemetry log records in OTLP/JSON (single records or export batches)
 
 A parser returns ``None`` when a line is not in its format, so the chain can try the next
 one. Parsers are cheap to sniff (first character) and compile their regexes once.
@@ -26,6 +27,7 @@ from log_analyzer.timeutil import parse_timestamp
 
 _TS = r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?"
 _MAX_CONTEXT_ATTEMPTS = 4
+_UNKNOWN_SERVICE = "unknown"  # structured records that name no service
 
 
 class Parser(Protocol):
@@ -42,6 +44,8 @@ class Parser(Protocol):
 
 
 ParserFactory = Callable[[ParserConfig], Parser]
+# A parse function and whether it returns a list (batch formats) or a single event.
+_Candidate = tuple[Callable[[str, int], Any], bool]
 PARSERS: Registry[ParserFactory] = Registry("parser")
 
 
@@ -186,7 +190,7 @@ class JsonParser:
         return LogEvent(
             ts=ts,
             level=level,
-            service=str(service) if service not in (None, "") else "unknown",
+            service=str(service) if service not in (None, "") else _UNKNOWN_SERVICE,
             message=str(message) if message is not None else "",
             raw=line,
             fmt=self.name,
@@ -196,6 +200,88 @@ class JsonParser:
         )
 
 
+class OtelParser:
+    """OpenTelemetry log records in OTLP/JSON form.
+
+    Two shapes are accepted, one per line:
+
+    * a single log record (OTel log data model): ``timeUnixNano``, ``severityText`` /
+      ``severityNumber``, ``body``, ``attributes``, ``resource``, ``traceId``;
+    * an OTLP export batch (what the OpenTelemetry Collector's file exporter writes):
+      ``{"resourceLogs": [{"resource": ..., "scopeLogs": [{"logRecords": [...]}]}]}``.
+
+    The service comes from the ``service.name`` resource attribute, and the trace id is
+    used as the request id (it counts distinct failed requests).
+    """
+
+    name = "otel"
+    first_chars = "{"
+    _markers = ('"resourceLogs"', '"timeUnixNano"', '"observedTimeUnixNano"', '"severityNumber"')
+
+    def __init__(self, config: ParserConfig) -> None:
+        del config  # nothing configurable yet; the factory signature is shared
+
+    def parse(self, line: str, line_no: int) -> LogEvent | None:
+        events = self.parse_batch(line, line_no)
+        return events[0] if events else None
+
+    def parse_batch(self, line: str, line_no: int) -> list[LogEvent] | None:
+        if not line.startswith("{") or not any(m in line for m in self._markers):
+            return None
+        try:
+            data = json.loads(line)
+        except ValueError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        if isinstance(data.get("resourceLogs"), list):
+            events = []
+            for resource_logs in data["resourceLogs"]:
+                if not isinstance(resource_logs, dict):
+                    continue
+                resource = _otel_attributes(resource_logs.get("resource"))
+                for scope_logs in resource_logs.get("scopeLogs") or []:
+                    records = scope_logs.get("logRecords") if isinstance(scope_logs, dict) else []
+                    for record in records or []:
+                        event = self._record(record, resource, line, line_no)
+                        if event is not None:
+                            events.append(event)
+            return events or None
+        event = self._record(data, _otel_attributes(data.get("resource")), line, line_no)
+        return [event] if event is not None else None
+
+    def _record(
+        self, record: Any, resource: dict[str, Any], raw: str, line_no: int
+    ) -> LogEvent | None:
+        if not isinstance(record, dict):
+            return None
+        ts = _otel_time(record.get("timeUnixNano")) or _otel_time(
+            record.get("observedTimeUnixNano")
+        )
+        if ts is None:
+            return None
+        level = _otel_level(record.get("severityText"), record.get("severityNumber"))
+        attributes = _otel_attributes(record.get("attributes"))
+        service = resource.get("service.name") or attributes.get("service.name")
+        trace_id = record.get("traceId")
+        fields = _flatten({**resource, **attributes})
+        for key in ("traceId", "spanId"):
+            if record.get(key):
+                fields[key] = record[key]
+        return LogEvent(
+            ts=ts,
+            level=level,
+            service=str(service) if service else _UNKNOWN_SERVICE,
+            message=_otel_value_text(record.get("body")),
+            raw=raw,
+            fmt=self.name,
+            request_id=str(trace_id) if trace_id and set(str(trace_id)) != {"0"} else None,
+            fields=fields,
+            line_no=line_no,
+        )
+
+
+PARSERS.register("otel")(OtelParser)
 PARSERS.register("text")(TextParser)
 PARSERS.register("app")(AppParser)
 PARSERS.register("json")(JsonParser)
@@ -214,22 +300,37 @@ class ParserChain:
         parsers.extend(PARSERS.get(name)(config) for name in config.enabled)
         self.parsers: tuple[Parser, ...] = tuple(parsers)
         self.max_line_length = config.max_line_length
-        self._by_first_char: dict[str, tuple[Parser, ...]] = {}
+        self._by_first_char: dict[str, tuple[_Candidate, ...]] = {}
 
     def parse(self, line: str, line_no: int = 0) -> LogEvent | None:
-        first = line[:1]
+        """The first event in ``line``, or ``None``."""
+        events = self.parse_all(line, line_no)
+        return events[0] if events else None
+
+    def parse_all(self, line: str, line_no: int = 0) -> list[LogEvent]:
+        """Every event in ``line``: usually one, several for batch formats (OTLP), or none.
+
+        A parser may define ``parse_batch(line, line_no) -> list[LogEvent] | None`` for
+        formats that carry many records per line.
+        """
+        for parse, is_batch in self._candidates(line[:1]):
+            result = parse(line, line_no)
+            if result:
+                return list(result) if is_batch else [result]
+        return []
+
+    def _candidates(self, first: str) -> tuple[_Candidate, ...]:
+        """Parse functions worth trying for a line starting with ``first`` (cached)."""
         candidates = self._by_first_char.get(first)
         if candidates is None:
             candidates = tuple(
-                p for p in self.parsers if first in getattr(p, "first_chars", first or " ")
+                (batch, True) if (batch := getattr(p, "parse_batch", None)) else (p.parse, False)
+                for p in self.parsers
+                if first in getattr(p, "first_chars", first or " ")
             )
             if len(self._by_first_char) < 256:
                 self._by_first_char[first] = candidates
-        for parser in candidates:
-            event = parser.parse(line, line_no)
-            if event is not None:
-                return event
-        return None
+        return candidates
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -285,6 +386,89 @@ def _lookup(data: Mapping[str, Any], keys: tuple[str, ...]) -> Any:
         if value is not None and not isinstance(value, dict | list):
             return value
     return None
+
+
+# OTel severityNumber ranges (log data model): 1-4 TRACE, 5-8 DEBUG, 9-12 INFO,
+# 13-16 WARN, 17-20 ERROR, 21-24 FATAL.
+_OTEL_SEVERITY_FLOORS = (
+    (21, Level.CRITICAL),
+    (17, Level.ERROR),
+    (13, Level.WARN),
+    (9, Level.INFO),
+    (1, Level.DEBUG),
+)
+_NANOS = 1_000_000_000
+_OTEL_RESOURCE_KEYS = frozenset({"attributes", "droppedAttributesCount"})
+
+
+def _otel_time(value: Any) -> float | None:
+    """Epoch nanoseconds (JSON string or int) -> epoch seconds; 0 means "unset"."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        nanos = int(value)
+    except (TypeError, ValueError):
+        return None
+    return nanos / _NANOS if nanos > 0 else None
+
+
+def _otel_level(text: Any, number: Any) -> Level:
+    if isinstance(text, str) and text:
+        try:
+            return Level.parse(text)
+        except ValueError:
+            pass
+    if isinstance(number, int) and not isinstance(number, bool) and 1 <= number <= 24:
+        return next(level for floor, level in _OTEL_SEVERITY_FLOORS if number >= floor)
+    return Level.INFO  # severity is optional in OTel; unset means "no opinion"
+
+
+def _otel_value(value: Any) -> Any:
+    """Unwrap an OTLP AnyValue (``{"stringValue": "x"}``, ``{"intValue": "5"}``, ...)."""
+    if not isinstance(value, dict):
+        return value
+    for key in ("stringValue", "boolValue", "doubleValue"):
+        if key in value:
+            return value[key]
+    if "intValue" in value:
+        try:
+            return int(value["intValue"])
+        except (TypeError, ValueError):
+            return value["intValue"]
+    if "arrayValue" in value:
+        return [_otel_value(v) for v in value["arrayValue"].get("values") or []]
+    if "kvlistValue" in value:
+        return _otel_attributes(value["kvlistValue"].get("values"))
+    return value
+
+
+def _otel_value_text(body: Any) -> str:
+    value = _otel_value(body)
+    if value is None:
+        return ""
+    return value if isinstance(value, str) else json.dumps(value, sort_keys=True)
+
+
+def _otel_attributes(data: Any) -> dict[str, Any]:
+    """OTLP attributes (``[{"key": k, "value": AnyValue}]``) or a plain mapping -> dict.
+
+    Accepts a ``resource`` object too (its ``attributes`` are used).
+    """
+    if (
+        isinstance(data, dict)
+        and isinstance(data.get("attributes"), list | dict)
+        and set(data) <= _OTEL_RESOURCE_KEYS
+    ):
+        data = data["attributes"]
+    if isinstance(data, list):
+        return {
+            str(item["key"]): _otel_value(item.get("value"))
+            for item in data
+            if isinstance(item, dict) and "key" in item
+        }
+    if isinstance(data, dict):
+        return {str(k): _otel_value(v) for k, v in data.items()}
+    return {}
 
 
 def _first_str(data: Mapping[str, Any], keys: tuple[str, ...]) -> str | None:

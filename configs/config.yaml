@@ -114,7 +114,7 @@ analyzer:
 
   # ------------------------------------------------------------------------ parsers
   parsers:
-    enabled: [json, text, app]
+    enabled: [otel, json, text, app]   # otel = OpenTelemetry OTLP/JSON log records
     default_timezone: UTC             # for timestamps without an offset
     # The Monolog/Laravel-style lines ("[ts] production.ERROR: ...") carry no service name.
     # They come from the customer-facing web application in this environment.

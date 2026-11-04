@@ -23,7 +23,7 @@ def report_dict(result: AnalysisResult) -> dict[str, Any]:
             "end": format_iso(result.period_end) if result.period_end else None,
         },
         "statistics": {
-            "total_logs": stats.lines_read - stats.blank_lines,
+            "total_logs": stats.total_logs,
             "errors_found": result.window_errors,
             "alerts_generated": len(result.alerts),
             "noise_reduction_percent": result.noise_reduction,

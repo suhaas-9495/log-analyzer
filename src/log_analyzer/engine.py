@@ -68,6 +68,15 @@ class RunStats:
     def ignored(self) -> int:
         return sum(self.filtered.values())
 
+    @property
+    def total_logs(self) -> int:
+        """Log records seen: parsed events plus lines that were not events.
+
+        Equals non-blank lines for one-record-per-line formats; an OTLP export batch
+        counts each of its records.
+        """
+        return self.parsed + self.unparsed + self.continuation_lines
+
 
 @dataclass(frozen=True, slots=True)
 class ServiceSummary:
@@ -159,29 +168,35 @@ class Analyzer:
 
     # ------------------------------------------------------------------------ input
     def process_line(self, line: str) -> list[AlertEvent]:
-        event = self.parse_line(line)
-        return self.process_event(event) if event is not None else []
+        alerts: list[AlertEvent] = []
+        for event in self.parse_line(line):
+            alerts.extend(self.process_event(event))
+        return alerts
 
-    def parse_line(self, line: str) -> LogEvent | None:
-        """Parse one raw line, keeping line-level statistics; ``None`` if not an event."""
+    def parse_line(self, line: str) -> list[LogEvent]:
+        """Parse one raw line, keeping line-level statistics.
+
+        Returns the events it holds: usually one, several for batch formats such as an
+        OTLP export, none for blank, continuation or unparseable lines.
+        """
         stats = self.stats
         stats.lines_read += 1
         line = line.rstrip("\r\n")
         if not line.strip():
             stats.blank_lines += 1
-            return None
+            return []
         if len(line) > self._parsers.max_line_length:
             stats.truncated_lines += 1
             line = line[: self._parsers.max_line_length]
-        event = self._parsers.parse(line, stats.lines_read)
-        if event is None:
+        events = self._parsers.parse_all(line, stats.lines_read)
+        if not events:
             if _CONTINUATION.match(line):
                 stats.continuation_lines += 1
             else:
                 stats.unparsed += 1
                 if len(stats.unparsed_samples) < _MAX_UNPARSED_SAMPLES:
                     stats.unparsed_samples.append(line[:200])
-        return event
+        return events
 
     def process_lines(self, lines: Iterable[str]) -> list[AlertEvent]:
         events: list[AlertEvent] = []

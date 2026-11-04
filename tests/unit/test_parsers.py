@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from log_analyzer.config import build_config
 from log_analyzer.config.schema import ParserConfig
-from log_analyzer.ingest.parsers import PARSERS, AppParser, JsonParser, ParserChain, TextParser
+from log_analyzer.ingest.parsers import (
+    PARSERS,
+    AppParser,
+    JsonParser,
+    OtelParser,
+    ParserChain,
+    TextParser,
+)
 from log_analyzer.models import Level
 from log_analyzer.plugins import PluginError
 from log_analyzer.timeutil import parse_timestamp
@@ -141,6 +150,159 @@ class TestAppParser:
         assert self.parser.parse("[2024-01-10 10:15:26] production.NOPE: x", 1) is None
 
 
+def _attr(key: str, value: object) -> dict[str, object]:
+    if isinstance(value, bool):
+        wrapped: dict[str, object] = {"boolValue": value}
+    elif isinstance(value, int):
+        wrapped = {"intValue": str(value)}  # OTLP/JSON encodes 64-bit ints as strings
+    else:
+        wrapped = {"stringValue": value}
+    return {"key": key, "value": wrapped}
+
+
+T_NANOS = "1704881725123000000"  # 2024-01-10T10:15:25.123Z
+
+
+class TestOtelParser:
+    parser = OtelParser(CFG)
+
+    def test_single_record_in_otlp_json(self) -> None:
+        record = {
+            "timeUnixNano": T_NANOS,
+            "severityText": "ERROR",
+            "severityNumber": 17,
+            "body": {"stringValue": "Database connection pool exhausted"},
+            "traceId": "5b8efff798038103d269b633813fc60c",
+            "spanId": "eee19b7ec3c1b174",
+            "attributes": [_attr("active_connections", 100), _attr("retry", True)],
+            "resource": {"attributes": [_attr("service.name", "payment-service")]},
+        }
+        event = self.parser.parse(json.dumps(record), 7)
+        assert event is not None
+        assert event.fmt == "otel"
+        assert event.ts == pytest.approx(1704881725.123)
+        assert event.level is Level.ERROR
+        assert event.service == "payment-service"
+        assert event.message == "Database connection pool exhausted"
+        assert event.request_id == "5b8efff798038103d269b633813fc60c"
+        assert event.fields["active_connections"] == 100
+        assert event.fields["retry"] is True
+        assert event.fields["spanId"] == "eee19b7ec3c1b174"
+        assert event.line_no == 7
+
+    def test_export_batch_yields_every_record(self) -> None:
+        batch = {
+            "resourceLogs": [
+                {
+                    "resource": {"attributes": [_attr("service.name", "api-gateway")]},
+                    "scopeLogs": [
+                        {
+                            "logRecords": [
+                                {
+                                    "timeUnixNano": T_NANOS,
+                                    "severityNumber": 9,
+                                    "body": {"stringValue": "ok"},
+                                },
+                                {
+                                    "timeUnixNano": T_NANOS,
+                                    "severityNumber": 17,
+                                    "body": {"stringValue": "boom"},
+                                },
+                                "not a record",
+                            ]
+                        }
+                    ],
+                },
+                {
+                    "resource": {"attributes": [_attr("service.name", "database")]},
+                    "scopeLogs": [
+                        {"logRecords": [{"observedTimeUnixNano": T_NANOS, "body": "plain"}]}
+                    ],
+                },
+                "not a resource",
+            ]
+        }
+        events = ParserChain(CFG).parse_all(json.dumps(batch), 3)
+        assert [(e.service, e.level, e.message) for e in events] == [
+            ("api-gateway", Level.INFO, "ok"),
+            ("api-gateway", Level.ERROR, "boom"),
+            ("database", Level.INFO, "plain"),
+        ]
+
+    @pytest.mark.parametrize(
+        ("text", "number", "level"),
+        [
+            ("WARN", None, Level.WARN),
+            ("Information", 9, Level.INFO),
+            (None, 2, Level.DEBUG),
+            (None, 13, Level.WARN),
+            (None, 21, Level.CRITICAL),
+            ("Weird", 18, Level.ERROR),
+            ("Weird", None, Level.INFO),
+            (None, None, Level.INFO),
+        ],
+    )
+    def test_severity_text_then_number(
+        self, text: str | None, number: int | None, level: Level
+    ) -> None:
+        record: dict[str, object] = {"timeUnixNano": T_NANOS, "body": "x"}
+        if text is not None:
+            record["severityText"] = text
+        if number is not None:
+            record["severityNumber"] = number
+        event = self.parser.parse(json.dumps(record), 1)
+        assert event is not None
+        assert event.level is level
+
+    def test_structured_body_flat_resource_and_attribute_service(self) -> None:
+        record = {
+            "timeUnixNano": int(T_NANOS),
+            "body": {"kvlistValue": {"values": [_attr("order_id", 42)]}},
+            "resource": {"host.name": "node-1"},
+            "attributes": {"service.name": "order-service"},
+            "traceId": "00000000000000000000000000000000",
+        }
+        event = self.parser.parse(json.dumps(record), 1)
+        assert event is not None
+        assert event.message == '{"order_id": 42}'
+        assert event.service == "order-service"
+        assert event.fields["host.name"] == "node-1"
+        assert event.request_id is None  # an all-zero trace id means "no trace"
+
+    def test_any_value_variants(self) -> None:
+        record = {
+            "timeUnixNano": T_NANOS,
+            "body": {"arrayValue": {"values": [{"stringValue": "a"}, {"doubleValue": 1.5}]}},
+            "attributes": [{"key": "n", "value": {"intValue": "not-a-number"}}, {"value": {}}],
+        }
+        event = self.parser.parse(json.dumps(record), 1)
+        assert event is not None
+        assert event.message == '["a", 1.5]'
+        assert event.service == "unknown"
+        assert event.fields == {"n": "not-a-number"}
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '{"timestamp":"2024-01-10T10:00:00Z","message":"plain json"}',  # no OTel markers
+            '{"timeUnixNano": "1", broken',
+            '["timeUnixNano"]',
+            '{"timeUnixNano": "0", "body": "unset time and no observed time"}',
+            '{"timeUnixNano": true, "body": "x"}',
+            '{"timeUnixNano": "soon", "body": "x"}',
+            '{"resourceLogs": []}',
+            "2024-01-10 10:00:00 INFO [a] timeUnixNano",
+        ],
+    )
+    def test_rejects_non_otel_lines(self, line: str) -> None:
+        assert self.parser.parse(line, 1) is None
+
+    def test_plain_json_still_goes_to_the_json_parser(self) -> None:
+        event = ParserChain(CFG).parse('{"timestamp":"2024-01-10T10:00:00Z","message":"x"}')
+        assert event is not None
+        assert event.fmt == "json"
+
+
 class TestParserChain:
     def test_dispatches_mixed_formats(self) -> None:
         chain = ParserChain(CFG)
@@ -177,6 +339,6 @@ class TestParserChain:
             ParserChain(ParserConfig(enabled=("xml",)))
 
     def test_registry_lists_builtins_and_rejects_duplicates(self) -> None:
-        assert {"text", "json", "app"} <= set(PARSERS.names())
+        assert {"text", "json", "app", "otel"} <= set(PARSERS.names())
         with pytest.raises(PluginError, match="already registered"):
             PARSERS.register("text")(TextParser)

@@ -18,7 +18,7 @@ and the database pool exhaustion is flagged *before* the pool actually runs out.
 
 | Problem statement asks for | Where it is |
 |---|---|
-| 1. Parse logs in various formats | Text, JSON and Monolog/app formats, auto-detected **per line** (the samples interleave them); plugin parsers ([`ingest/parsers.py`](src/log_analyzer/ingest/parsers.py)) |
+| 1. Parse logs in various formats | Text, JSON and Monolog/app formats, plus **OpenTelemetry** (OTLP/JSON records and Collector export batches), auto-detected **per line** (the samples interleave them); plugin parsers ([`ingest/parsers.py`](src/log_analyzer/ingest/parsers.py)) |
 | 2. Detect patterns and anomalies | Pattern rule library, error-rate spikes against a sliding baseline, gradual latency degradation (trend test), connection-pool saturation with time-to-exhaustion ([`detectors/`](src/log_analyzer/detectors)) |
 | 3. Correlate related errors, find root causes | Evidence-based incident correlation validated against the service topology, cascade detection, root-cause scoring ([`correlation/`](src/log_analyzer/correlation)) |
 | 4. Smart alerts, 90% less noise | One alert per incident in the spec's JSON format, alert lifecycle (new / escalated / resolved), background-noise inhibition |
@@ -91,6 +91,11 @@ wrapper that uses `.venv` when present; `log-analyzer` is on PATH after `make in
 ./log-analyzer --file application.log --config config.yaml
 tail -f /var/log/app/*.log | ./log-analyzer --config config.yaml
 ```
+
+OpenTelemetry logs need no extra flag: OTLP/JSON records and OpenTelemetry Collector
+file-exporter batches are recognised per line, next to the other formats. For example,
+`./log-analyzer -f tests/fixtures/scenario1_cascade_otel.jsonl -c configs/config.yaml` gives
+the same CRITICAL alert as the plain-text version of scenario 1.
 
 | Option | Purpose |
 |---|---|
@@ -297,7 +302,7 @@ src/log_analyzer/
   engine.py              Analyzer: pipeline orchestration, run statistics, results
   models.py              LogEvent, Signal, Level, Severity, Category
   config/                schema (typed, immutable), loader (merge + validation), defaults.yaml
-  ingest/                parsers (registry + 3 formats), sources (gzip, merge by time, stdin)
+  ingest/                parsers (registry + 4 formats incl. OpenTelemetry), sources (gzip, merge by time, stdin)
   processing/            filters, pattern classifier, metric extraction, message templates
   detectors/             error_rate, latency (trend), saturation (+ plugin base)
   correlation/           correlator (incidents, lifecycle, noise), rca, rules (DSL), topology
