@@ -102,10 +102,6 @@ def event(
     )
 
 
-def text_line(ts: str, level: str, service: str, message: str) -> str:
-    return f"2024-01-10 {ts} {level} [{service}] {message}"
-
-
 EventFactory = Callable[..., LogEvent]
 
 

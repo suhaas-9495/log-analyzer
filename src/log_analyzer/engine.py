@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 from log_analyzer.alerts.builder import AlertView
 from log_analyzer.config.schema import AnalyzerConfig
-from log_analyzer.correlation.correlator import AlertEvent, Correlator
+from log_analyzer.correlation.correlator import AlertEvent, Correlator, CorrelatorStats
 from log_analyzer.correlation.topology import ServiceDirectory
 from log_analyzer.detectors import DETECTORS, Detector
 from log_analyzer.detectors.error_rate import ErrorRateDetector
@@ -92,6 +92,7 @@ class AnalysisResult:
     services: list[ServiceSummary]
     processing_seconds: float
     peak_memory_mb: float
+    correlation: CorrelatorStats = field(default_factory=CorrelatorStats)
 
     @property
     def noise_reduction(self) -> float:
@@ -257,6 +258,7 @@ class Analyzer:
             services=services,
             processing_seconds=time.perf_counter() - self._started,
             peak_memory_mb=peak_memory_mb(),
+            correlation=self.correlator.stats,
         )
 
     # -------------------------------------------------------------------- internals

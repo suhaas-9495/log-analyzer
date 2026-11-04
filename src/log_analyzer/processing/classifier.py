@@ -7,13 +7,13 @@ grouped instead of lost. WARN/INFO lines that match nothing are only counted.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from log_analyzer.config.schema import AnalyzerConfig, PatternRule
 from log_analyzer.correlation.topology import ServiceDirectory
 from log_analyzer.models import Category, Level, LogEvent, Severity, Signal, SignalSource
 from log_analyzer.processing.templates import template_of
+from log_analyzer.stats import finite_number as _number
 
 _BUILTIN_GROUP_KEYS = frozenset({"service", "level"})
 _MAX_TIMEOUT_SHIFT_S = 600.0  # ignore absurd timeout values when back-dating failures
@@ -170,13 +170,3 @@ def _effective_ts(ts: float, timeout_ms: Any) -> float | None:
         return None
     seconds = shift / 1000.0
     return ts - seconds if seconds <= _MAX_TIMEOUT_SHIFT_S else None
-
-
-def _number(value: Any) -> float | None:
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) else None

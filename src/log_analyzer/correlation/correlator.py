@@ -217,9 +217,7 @@ class Correlator:
         if not homes and spike:
             # A spike no known incident explains joins the shared "unexplained" bucket.
             homes = [inc for inc in self._open if inc.unexplained]
-        if not homes:
-            return None
-        return max(homes, key=lambda inc: (not inc.unexplained, inc.last_activity))
+        return _best_home(homes)
 
     def attach_context(self, event: LogEvent) -> None:
         """Attach a WARN+ line that produced no signal to the incident of its service.
@@ -371,7 +369,7 @@ class Correlator:
         """
         events: list[AlertEvent] = []
         for incident in list(self._open):
-            if incident is noise or incident.unexplained or not self._covers(noise, incident):
+            if incident is noise or incident.unexplained or not self._is_broad(noise):
                 continue
             if incident.alert is None:
                 # Not alerting yet, so it cannot be corroborated/critical: only metric
@@ -432,6 +430,15 @@ class Correlator:
             return True
         if len(incident.cascade_members) >= self._config.thresholds.cascade_min_services:
             return True
+        return self._meets_volume_bar(incident)
+
+    def _meets_volume_bar(self, incident: Incident) -> bool:
+        """``min_occurrences`` within ``alert_grouping``.
+
+        Several services linked by evidence: any related errors count. One service: the
+        *same* error must repeat; a mix of different random errors is the error-rate
+        detector's job.
+        """
         needed = incident.min_occurrences_override or self._config.thresholds.min_occurrences
         if len(incident.services) > 1:
             return incident.burst(needed) <= self._grouping
@@ -448,13 +455,7 @@ class Correlator:
         # own; an error-rate spike adds evidence to an incident but never pages for it.
         if assessment.cascade or incident.unexplained or self._metric_evidence(incident) != "none":
             return True
-        needed = incident.min_occurrences_override or self._config.thresholds.min_occurrences
-        if len(incident.services) > 1:
-            # Several services linked by evidence: any `needed` related errors in a window.
-            return incident.burst(needed) <= self._grouping
-        # One service: the *same* error must repeat `needed` times within the window;
-        # a mix of different random errors is the error-rate detector's job.
-        return incident.fingerprint_burst(needed) <= self._grouping
+        return self._meets_volume_bar(incident)
 
     def _strong(self, incident: Incident, assessment: Assessment | None) -> bool:
         """Is the incident backed by evidence that random error lines cannot fake?
@@ -503,8 +504,7 @@ class Correlator:
 
     def _broad_noise_active(self) -> bool:
         return any(
-            inc.unexplained and inc.alert is not None and self._covers(inc, inc)
-            for inc in self._open
+            inc.unexplained and inc.alert is not None and self._is_broad(inc) for inc in self._open
         )
 
     def _inhibitable(self, incident: Incident, assessment: Assessment) -> bool:
@@ -520,18 +520,18 @@ class Correlator:
         if not self._inhibitable(incident, assessment):
             return False
         for other in self._open:
-            if other.unexplained and other.alert is not None and self._covers(other, incident):
+            if other.unexplained and other.alert is not None and self._is_broad(other):
                 incident.inhibited_by = other
                 return True
         return False
 
-    def _covers(self, noise: Incident, incident: Incident) -> bool:
+    def _is_broad(self, noise: Incident) -> bool:
         """Only *broad* noise (several unrelated services) inhibits other incidents.
 
         A single service with an unexplained error rate is not "background noise"; its
-        own incidents keep their specific alerts.
+        own incidents keep their specific alerts. Once noise is broad it is platform-wide,
+        so it covers every weak incident regardless of which services that touches.
         """
-        del incident  # coverage is platform-wide once the noise is broad
         return len(noise.services) >= self._config.thresholds.cascade_min_services
 
     def _is_diverse(self, incident: Incident) -> bool:
@@ -555,3 +555,8 @@ class Correlator:
         day = format_date_compact(ts)
         self._sequence[day] = self._sequence.get(day, 0) + 1
         return f"ALR-{day}-{self._sequence[day]:03d}"
+
+
+def _best_home(homes: list[Incident]) -> Incident | None:
+    """Prefer a real (not noise) incident, then the most recently active one."""
+    return max(homes, key=lambda inc: (not inc.unexplained, inc.last_activity), default=None)

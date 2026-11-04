@@ -112,7 +112,6 @@ class Incident:
         self.structure_version = 0  # bumps when services/edges/kinds change
         self.evaluated_version = -1
         self.evaluated_at = -1.0
-        self.merged_into: Incident | None = None
         self.inhibited_by: Incident | None = None
         self.add(signal)
 
@@ -139,9 +138,6 @@ class Incident:
         return min(
             (_span(times, count) for times in self.fingerprint_ts.values()), default=float("inf")
         )
-
-    def failing_services(self) -> list[str]:
-        return [name for name, impact in self.services.items() if impact.is_failing]
 
     # ---------------------------------------------------------------------- adding
     def add(self, signal: Signal) -> None:
@@ -324,7 +320,6 @@ class Incident:
         self.unexplained = self.unexplained and (keep_unexplained or other.unexplained)
         self.structure_version += 1
         other.status = IncidentStatus.MERGED
-        other.merged_into = self
 
 
 def self_evidence(signal: Signal) -> float:

@@ -8,12 +8,11 @@ match because the regexes require digits, and implausible values are discarded.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from typing import Any
 
 from log_analyzer.config.schema import MetricKind, MetricRule
 from log_analyzer.models import LogEvent
+from log_analyzer.stats import finite_number
 
 _MAX_LATENCY_MS = 24 * 3600 * 1000.0
 _MAX_UTILIZATION = 2.0  # >200% of capacity is a garbled reading, not saturation
@@ -88,14 +87,5 @@ class MetricExtractor:
         return MetricSample(rule.name, rule.kind, rule.label, ratio, used, capacity)
 
 
-def _number(value: Any) -> float | None:
-    """Parse a finite, non-negative number; anything else (``"ord_123"``) is ``None``."""
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(number) or number < 0:
-        return None
-    return number
+def _number(value: object) -> float | None:
+    return finite_number(value, non_negative=True)

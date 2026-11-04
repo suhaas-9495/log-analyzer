@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from typing import Any
 
 from log_analyzer import __version__
@@ -28,6 +29,7 @@ def report_dict(result: AnalysisResult) -> dict[str, Any]:
             "noise_reduction_percent": result.noise_reduction,
             # ---- extensions ----
             "warnings_found": stats.warnings,
+            "logs_parsed": stats.parsed,
             "logs_analyzed": stats.analyzed,
             "logs_ignored": stats.ignored,
             "ignored_by_reason": dict(stats.filtered),
@@ -35,6 +37,7 @@ def report_dict(result: AnalysisResult) -> dict[str, Any]:
             "continuation_lines": stats.continuation_lines,
             "formats": dict(stats.by_format),
             "active_alerts": sum(1 for a in result.alerts if a.status == "active"),
+            "incidents": asdict(result.correlation),
         },
         "alerts": [alert.to_dict() for alert in result.alerts],
         "services": [

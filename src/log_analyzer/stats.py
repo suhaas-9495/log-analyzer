@@ -4,6 +4,20 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from typing import Any
+
+
+def finite_number(value: Any, *, non_negative: bool = False) -> float | None:
+    """Parse a finite number from a log value; anything else (``"ord_123"``) is ``None``."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or (non_negative and number < 0):
+        return None
+    return number
 
 
 def median(values: Sequence[float]) -> float:
