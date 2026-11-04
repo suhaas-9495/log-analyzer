@@ -186,11 +186,13 @@ class AlertBuilder:
             via = blaming_signal(incident, root.service)
             cause = title_case(via.title) if via and via.title else "Failures"
             who = humanize(caller) if len(callers) == 1 else f"{len(callers)} Services"
-            if not blamed_only_for_slowness(incident, root.service):
+            kind = blame_category(incident, root.service)
+            if kind in _UNREACHABLE:
                 return f"{cause} in {who} - {svc} Unreachable"
             if svc.lower() in cause.lower():
                 return f"{cause} in {who}"
-            return f"{cause} in {who} - {svc} Slow"
+            state = "Slow" if kind is Category.PERFORMANCE else "Saturated"
+            return f"{cause} in {who} - {svc} {state}"
         cause = title_case(primary.title) if primary and primary.title else "Errors"
         if category == "cascade":
             lead = cause if svc.lower() in cause.lower() else f"{svc} {cause}"
@@ -251,13 +253,15 @@ class AlertBuilder:
     def _probable_cause(self, root: RootCause, primary: Signal | None, incident: Incident) -> str:
         if root.inferred:
             callers = ", ".join(sorted({src for src, dst in incident.edges if dst == root.service}))
-            if blamed_only_for_slowness(incident, root.service):
-                via = blaming_signal(incident, root.service)
-                cause = via.probable_cause if via and via.probable_cause else "Slow responses"
-                if root.service.replace("-", " ").lower() not in cause.lower():
-                    cause = f"{cause} on {root.service}"
-                return f"{cause} (inferred from slow calls reported by {callers})"
-            return f"{root.service} unavailable (inferred from failing calls by {callers})"
+            via = blaming_signal(incident, root.service)
+            if via is None or via.category in _UNREACHABLE or not via.probable_cause:
+                return f"{root.service} unavailable (inferred from failing calls by {callers})"
+            # Callers report it slow or saturated, not down: say exactly that.
+            cause = via.probable_cause
+            if root.service.replace("-", " ").lower() not in cause.lower():
+                cause = f"{cause} on {root.service}"
+            calls = "slow calls" if via.category is Category.PERFORMANCE else "failing calls"
+            return f"{cause} (inferred from {calls} reported by {callers})"
         if incident.unexplained:
             return "No common root cause: heterogeneous errors across unrelated services"
         if primary is None:
@@ -373,7 +377,7 @@ class AlertBuilder:
             listed = ", ".join(f"{svc} ({count})" for svc, count in callers[:5])
             verb = (
                 "reported slow calls to"
-                if blamed_only_for_slowness(incident, root)
+                if blame_category(incident, root) is Category.PERFORMANCE
                 else "failed calling"
             )
             lines.append(
@@ -526,14 +530,20 @@ def blaming_signal(incident: Incident, dependency: str) -> Signal | None:
     return max(blaming, key=lambda s: (s.severity, -s.ts)) if blaming else None
 
 
-def blamed_only_for_slowness(incident: Incident, dependency: str) -> bool:
-    """True when every signal naming ``dependency`` reports it slow, none reports it failing.
+# Blame that means "cannot reach it" (timeouts, refused connections, health checks).
+_UNREACHABLE = frozenset({Category.DEPENDENCY, Category.AVAILABILITY})
 
-    "Query took 2100ms" implicates the database, but as slow rather than down, so alert
-    text must not call it unavailable.
+
+def blame_category(incident: Incident, dependency: str) -> Category | None:
+    """What callers report about a dependency that never logged an error itself.
+
+    Taken from the most severe signal naming it: "Query took 2100ms" means slow
+    (performance), "pool exhausted" or "deadlock" means saturated (resource), a timeout
+    or refused connection means unreachable (dependency). Alert text follows this, so a
+    slow or saturated database is never described as down.
     """
-    blaming = [s for s in incident.first_signals.values() if dependency in s.targets]
-    return bool(blaming) and all(s.category is Category.PERFORMANCE for s in blaming)
+    via = blaming_signal(incident, dependency)
+    return via.category if via is not None else None
 
 
 def _preview(message: str) -> str:

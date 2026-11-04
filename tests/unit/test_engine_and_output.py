@@ -194,3 +194,18 @@ def test_silent_dependency_blamed_for_failures_is_called_unreachable() -> None:
     assert any(
         "failed calling payment-provider" in e for e in view["root_cause_analysis"]["evidence"]
     )
+
+
+def test_silent_dependency_blamed_for_saturation_is_not_called_down() -> None:
+    # Deadlocks implicate the database as saturated, not unreachable.
+    lines = [
+        f"2024-01-10 10:00:0{i} ERROR [orders] Deadlock found when trying to get lock"
+        for i in range(3)
+    ]
+    (alert,) = analyze(lines, build_config({})).alerts
+    view = alert.to_dict()
+    assert "Unreachable" not in view["title"]
+    assert view["root_cause_analysis"]["probable_cause"] == (
+        "Conflicting transactions deadlocking on database "
+        "(inferred from failing calls reported by orders)"
+    )
