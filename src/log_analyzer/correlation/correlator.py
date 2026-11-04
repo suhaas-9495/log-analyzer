@@ -300,7 +300,7 @@ class Correlator:
         keys = (
             [_UNEXPLAINED_KEY]
             if incident.unexplained
-            else [fp for fp in incident.fingerprints if fp and fp[0] in _DETECTOR_KINDS]
+            else [signal.fingerprint for signal in incident.latest_detector.values()]
         )
         for key in keys:
             self._cooldown_index[key] = incident
@@ -428,7 +428,7 @@ class Correlator:
 
     def _could_alert(self, incident: Incident) -> bool:
         """Necessary (not sufficient) conditions for a first alert, without running RCA."""
-        if incident.unexplained or _METRIC_DETECTORS & incident.kinds.keys():
+        if incident.unexplained or self._metric_evidence(incident) != "none":
             return True
         if len(incident.cascade_members) >= self._config.thresholds.cascade_min_services:
             return True
@@ -446,7 +446,11 @@ class Correlator:
             return False
         # Metric detectors (latency trend, saturation) and the noise bucket alert on their
         # own; an error-rate spike adds evidence to an incident but never pages for it.
-        if assessment.cascade or incident.unexplained or _METRIC_DETECTORS & incident.kinds.keys():
+        if (
+            assessment.cascade
+            or incident.unexplained
+            or self._metric_evidence(incident) != "none"
+        ):
             return True
         needed = incident.min_occurrences_override or self._config.thresholds.min_occurrences
         if len(incident.services) > 1:
@@ -486,16 +490,19 @@ class Correlator:
 
     @staticmethod
     def _metric_evidence(incident: Incident) -> str:
-        """``dense`` (saturation, or a latency trend over real history), ``sparse`` (a
-        latency trend judged from a handful of samples) or ``none``."""
+        """Evidence from detectors other than the error-rate spike detector.
+
+        ``dense``: saturation, a latency trend over real history, or any plugin detector;
+        ``sparse``: a latency trend judged from a handful of samples; ``none`` otherwise.
+        """
         found = "none"
         for (_svc, kind), signal in incident.latest_detector.items():
-            if kind == "resource_saturation" or (
-                kind == "latency_degradation" and not signal.attributes.get("sparse")
-            ):
-                return "dense"
-            if kind == "latency_degradation":
+            if kind == "error_rate_spike":
+                continue
+            if kind == "latency_degradation" and signal.attributes.get("sparse"):
                 found = "sparse"
+                continue
+            return "dense"
         return found
 
     def _broad_noise_active(self) -> bool:
@@ -553,6 +560,3 @@ class Correlator:
         self._sequence[day] = self._sequence.get(day, 0) + 1
         return f"ALR-{day}-{self._sequence[day]:03d}"
 
-
-_DETECTOR_KINDS = frozenset({"error_rate_spike", "latency_degradation", "resource_saturation"})
-_METRIC_DETECTORS = frozenset({"latency_degradation", "resource_saturation"})

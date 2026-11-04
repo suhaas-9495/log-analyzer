@@ -270,15 +270,20 @@ def _flatten(data: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
 
 
 def _lookup(data: Mapping[str, Any], keys: tuple[str, ...]) -> Any:
+    """First *scalar* value among ``keys``; dotted keys walk nested objects.
+
+    Objects are skipped so that ECS-style ``{"service": {"name": "x"}}`` falls through
+    from ``service`` to ``service.name``.
+    """
     for key in keys:
-        if key in data:
-            return data[key]
-        if "." in key:  # nested lookup, e.g. "service.name"
+        value = data.get(key)
+        if value is None and "." in key:
             node: Any = data
             for part in key.split("."):
                 node = node.get(part) if isinstance(node, dict) else None
-            if node is not None:
-                return node
+            value = node
+        if value is not None and not isinstance(value, dict | list):
+            return value
     return None
 
 

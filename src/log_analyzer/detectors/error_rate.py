@@ -9,6 +9,8 @@ The *current* rate (last ``windows.error_rate_current`` seconds) is compared wit
 
 ``baseline`` is never lower than the service's configured ``expected_error_rate``, so a
 perfectly clean history does not make the very first error look like an infinite spike.
+The absolute threshold only applies to services whose expected rate is below it (a
+service declared to run at 20% errors is not "on fire" at 15%).
 Buckets observed during a spike are flagged and excluded from future baselines, so a
 long incident does not quietly become "the new normal".
 """
@@ -144,8 +146,9 @@ class ErrorRateDetector:
         errors, total = self._sum(state, start, now_idx + 1, include_anomalous=True)
         rate = 100.0 * errors / total if total else 0.0
         baseline = self._baseline(service, state, start)
+        absolute_applies = self._absolute > self._config.expected_error_rate(service)
         spike = errors >= self._min_errors and (
-            rate >= self._multiplier * baseline or rate >= self._absolute
+            rate >= self._multiplier * baseline or (absolute_applies and rate >= self._absolute)
         )
         if not spike:
             state.spiking = False
