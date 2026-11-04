@@ -194,12 +194,37 @@ Example configurations for different environments are in [`configs/examples/`](c
 The full write-up, including how the design was arrived at, is in
 [docs/DESIGN.md](docs/DESIGN.md). In short:
 
+```mermaid
+flowchart TB
+    F["Input: log files<br/>.log / .gz, merged by time"]
+    S["Input: live stream<br/>stdin, tail -f"]
+    H["Input: HTTP API<br/>POST /analyze"]
+
+    subgraph analyzer["Analyzer (engine.py): the same pipeline for every input"]
+        direction LR
+        P["1. Parse<br/>text · json · app · otel<br/>+ plugin parsers"]
+        FI["2. Filter<br/>level · dev services<br/>ignore patterns"]
+        C["3. Classify<br/>YAML pattern rules<br/>metric extraction"]
+        D["4. Detect (stateful)<br/>error-rate spike<br/>latency trend<br/>pool saturation"]
+        CO["5. Correlate<br/>incidents · topology<br/>cascades · noise<br/>root cause · rules"]
+        AB["6. Alert<br/>spec JSON format"]
+        P --> FI --> C --> D --> CO --> AB
+        C -- "pattern signals" --> CO
+    end
+
+    CFG[("config.yaml + defaults.yaml<br/>windows · thresholds · services · rules")]
+    OUT["Console dashboard · live alert events · JSON report · HTTP response"]
+    MET["GET /metrics<br/>the analyzer's own health (Prometheus)"]
+
+    F --> P
+    S --> P
+    H --> P
+    CFG -.-> analyzer
+    AB -- "NEW / UPDATED / RESOLVED" --> OUT
+    H -.-> MET
 ```
- lines ──► parse ──► filter ──► classify + extract metrics ──► detectors ──► correlate ──► alerts
-          (3 formats, (spec ignore  (pattern rules →        (error rate,   (incidents,    (spec JSON,
-           per line)  rules, level,  signals; latency &      latency trend,  RCA, rules,    dashboard,
-                      dev services)  pool gauges)            saturation)     noise)         events)
-```
+
+GitHub draws the diagram above; the same picture is in [docs/DESIGN.md](docs/DESIGN.md#3-architecture).
 
 - **Built from the data, not just the spec.** Profiling the samples showed requirements the spec doesn't spell out. The performance degradation never crosses the 1000 ms threshold. Random noise names real services ("order-service: api-gateway connection attempt timed out"). Gateway timeouts are logged 30.06 s after their cause, just outside the 30 s window. Some values are deliberately garbled (`Request processed in ord_78642ms`, `CPU usage at 3748%`).
 - **Event time throughout.** Windows, rates and "started 4m ago" use log timestamps, so replaying a file gives the same answer as watching it live. Out-of-order lines are tolerated.
@@ -216,6 +241,7 @@ The full write-up, including how the design was arrived at, is in
 - **Noise is grouped and kept quiet.** Error-rate spikes that no incident explains go to one "no common root cause" alert. While it is active, weak incidents fold into it (Alertmanager-style inhibition). Incidents backed by metrics or a self-reporting root always page.
 - **Bounded memory.** Ring buffers, capped sample buffers and LRU-capped per-key state, with all limits configurable. Memory goes from 24 MB at 10k lines to 36 MB at 1M.
 - **Extensible.** Parsers and detectors are registry plugins loaded by reference from config. Patterns, metrics, runbooks and alert rules are data.
+- **OpenTelemetry-ready.** OTLP/JSON log records and OpenTelemetry Collector export batches are parsed natively, with trace ids counting distinct failed requests. `GET /metrics` exposes the analyzer's own health for Prometheus and Grafana.
 
 ## Performance
 

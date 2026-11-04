@@ -92,25 +92,34 @@ alert it produced.
 
 ## 3. Architecture
 
-```
-                 ┌──────────────────────────────────────────────────────────────────┐
-  file(s) ──┐    │ Analyzer (engine.py)                                             │
-  .gz       │    │                                                                  │
-  stdin  ───┼──► │  ParserChain ─► EventFilter ─► PatternClassifier ─► Signal       │
-  HTTP   ───┘    │  text│json│app   level, dev     rule library (YAML)    (per line) │
-                 │  + plugins       services,     MetricExtractor ─┐                 │
-                 │                  ignore regex  latency, pools   │                 │
-                 │                                                 ▼                 │
-                 │                     Detectors: ErrorRate · Latency · Saturation   │
-                 │                     (+ plugins) ─────────────► Signal (stateful)  │
-                 │                                                 │                 │
-                 │       Correlator ◄──────────────────────────────┘                 │
-                 │       incidents · topology checks · cascades · noise inhibition   │
-                 │       RootCauseAnalyzer · RuleEngine (alert_rules) · AlertBuilder │
-                 └──────────────────────────────┬───────────────────────────────────┘
-                                                │ AlertEvent: NEW / UPDATED / RESOLVED /
-                                                ▼            REOPENED / MERGED
-                        console dashboard · live events · JSON report · JSONL · HTTP
+```mermaid
+flowchart TB
+    F["Input: log files<br/>.log / .gz, merged by time"]
+    S["Input: live stream<br/>stdin, tail -f"]
+    H["Input: HTTP API<br/>POST /analyze"]
+
+    subgraph analyzer["Analyzer (engine.py): the same pipeline for every input"]
+        direction LR
+        P["1. Parse<br/>text · json · app · otel<br/>+ plugin parsers"]
+        FI["2. Filter<br/>level · dev services<br/>ignore patterns"]
+        C["3. Classify<br/>YAML pattern rules<br/>metric extraction"]
+        D["4. Detect (stateful)<br/>error-rate spike<br/>latency trend<br/>pool saturation"]
+        CO["5. Correlate<br/>incidents · topology<br/>cascades · noise<br/>root cause · rules"]
+        AB["6. Alert<br/>spec JSON format"]
+        P --> FI --> C --> D --> CO --> AB
+        C -- "pattern signals" --> CO
+    end
+
+    CFG[("config.yaml + defaults.yaml<br/>windows · thresholds · services · rules")]
+    OUT["Console dashboard · live alert events · JSON report · HTTP response"]
+    MET["GET /metrics<br/>the analyzer's own health (Prometheus)"]
+
+    F --> P
+    S --> P
+    H --> P
+    CFG -.-> analyzer
+    AB -- "NEW / UPDATED / RESOLVED" --> OUT
+    H -.-> MET
 ```
 
 The domain model ([`models.py`](../src/log_analyzer/models.py)) has four stages:
@@ -463,21 +472,17 @@ observation is that **signals are far rarer than log lines**: 7.6% in this delib
 incident-heavy sample, and typically well under 1% of normal production traffic. So only
 the first stages see full volume.
 
-```
- apps ─► OTel Collector / Fluent Bit ─► Kafka "logs" (partitioned by service)
-                                            │
-                     ┌──────────────────────┴───────────────────────┐
-                     ▼  N stateless+keyed workers (scale horizontally)
-           parse → filter → classify → metrics → detectors (state keyed by service,
-           RocksDB/Redis checkpointed; partitioning keeps a service's state local)
-                     │ signals  (a small fraction of volume)
-                     ▼
-            Kafka "signals" ─► correlator (one per topology connected component,
-                                or a single instance: signals are small)
-                     │ alerts
-                     ▼
-            Alertmanager / PagerDuty (routing, silencing, escalation via auto_escalate)
- Raw logs ─► columnar store (e.g. ClickHouse) for search; alerts link to the query.
+```mermaid
+flowchart LR
+    APPS["Services"] --> EDGE["OTel Collector / Fluent Bit<br/>drop DEBUG and dev, sample INFO"]
+    EDGE --> LOGS[("Kafka topic: logs<br/>partitioned by service")]
+    LOGS --> W["N workers (scale out)<br/>parse · filter · classify · detect<br/>per-service state, checkpointed"]
+    LOGS --> STORE[("Columnar store, e.g. ClickHouse<br/>raw logs for search")]
+    W --> SIG[("Kafka topic: signals<br/>a small fraction of the volume")]
+    SIG --> CORR["Correlator<br/>one per connected part of the service graph"]
+    TRACES["OTel traces"] -. "service graph" .-> CORR
+    CORR --> AM["Alertmanager / PagerDuty<br/>routing · silencing · escalation"]
+    AM -. "alert links to the query" .-> STORE
 ```
 
 **Ingestion**
