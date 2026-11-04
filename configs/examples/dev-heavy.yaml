@@ -1,0 +1,12 @@
+# Shared cluster where development and test services log next to production ones.
+analyzer:
+  filters:
+    min_level: INFO
+    ignore_services: ["dev-*", "*-dev", "*-test", "test-*", "localhost", "debug-*", "sandbox-*"]
+  ignore_patterns:
+    - "Health check endpoint"
+    - "Metrics collection"
+    - "DEBUG.*development"
+    - "(?i)hot reload|webpack|mock data"
+  parsers:
+    app_channel_services: {production: web-app, staging: web-app-staging}

@@ -1,0 +1,12 @@
+# Smallest useful config: rely on the built-in pattern library and defaults, only describe
+# the services. Without `dependencies`, log evidence is trusted as-is for correlation.
+analyzer:
+  services:
+    - name: checkout
+      critical: true
+      dependencies: [postgres, stripe]
+    - name: postgres
+      critical: true
+      aliases: [database, db]
+    - name: stripe
+      aliases: ["payment provider"]

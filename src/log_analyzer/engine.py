@@ -158,12 +158,17 @@ class Analyzer:
 
     # ------------------------------------------------------------------------ input
     def process_line(self, line: str) -> list[AlertEvent]:
+        event = self.parse_line(line)
+        return self.process_event(event) if event is not None else []
+
+    def parse_line(self, line: str) -> LogEvent | None:
+        """Parse one raw line, keeping line-level statistics; ``None`` if not an event."""
         stats = self.stats
         stats.lines_read += 1
         line = line.rstrip("\r\n")
         if not line.strip():
             stats.blank_lines += 1
-            return []
+            return None
         if len(line) > self._parsers.max_line_length:
             stats.truncated_lines += 1
             line = line[: self._parsers.max_line_length]
@@ -175,8 +180,7 @@ class Analyzer:
                 stats.unparsed += 1
                 if len(stats.unparsed_samples) < _MAX_UNPARSED_SAMPLES:
                     stats.unparsed_samples.append(line[:200])
-            return []
-        return self.process_event(event)
+        return event
 
     def process_lines(self, lines: Iterable[str]) -> list[AlertEvent]:
         events: list[AlertEvent] = []
@@ -194,8 +198,7 @@ class Analyzer:
             return []
         self._count(event)
         self.directory.observe(event.service)
-        if event.ts > self._watermark:
-            self._watermark = event.ts
+        self._watermark = max(self._watermark, event.ts)
         signals: list[Signal] = []
         signal = self._classifier.classify(event)
         if signal is not None:
@@ -217,8 +220,7 @@ class Analyzer:
 
     def advance_clock(self, now: float) -> list[AlertEvent]:
         """Advance event time without new input (e.g. an idle live stream)."""
-        if now > self._watermark:
-            self._watermark = now
+        self._watermark = max(self._watermark, now)
         return self.correlator.advance(self._watermark)
 
     @property
@@ -241,9 +243,7 @@ class Analyzer:
             views.append(builder.build(incident, assessment))
         views.sort(key=lambda v: (-v.severity, v.first_ts))
         if window_s is None:
-            counts = {
-                name: [c.events, c.errors, c.warnings] for name, c in self._services.items()
-            }
+            counts = {name: [c.events, c.errors, c.warnings] for name, c in self._services.items()}
         else:
             counts = self._timeline.window(start or 0.0, end or 0.0)
         services = self._summaries(counts, views)
@@ -319,7 +319,9 @@ class Analyzer:
 
     @staticmethod
     def _load_detectors(config: AnalyzerConfig) -> list[Detector]:
-        detectors: list[Detector] = [DETECTORS.get(name)(config) for name in config.detectors.enabled]
+        detectors: list[Detector] = [
+            DETECTORS.get(name)(config) for name in config.detectors.enabled
+        ]
         for reference in config.detectors.plugins:
             factory = load_reference(reference)
             if not callable(factory):

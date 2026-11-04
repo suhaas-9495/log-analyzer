@@ -51,9 +51,8 @@ class ServiceDirectory:
             self._dirty = True
 
     def observe(self, service: str) -> None:
-        """Record a service seen emitting logs (bounded LRU)."""
+        """Record a service seen emitting logs (bounded, oldest-first eviction)."""
         if service in self._observed:
-            self._observed.move_to_end(service)
             return
         self._observed[service] = None
         if len(self._observed) > self._max_observed:

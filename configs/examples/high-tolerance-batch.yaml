@@ -1,0 +1,30 @@
+# Batch / background-processing estate: errors are common and retried, latency is long.
+# Alert only on sustained, large deviations.
+analyzer:
+  windows:
+    error_rate_baseline: 30m
+    error_rate_current: 5m
+    alert_grouping: 5m
+    latency_trend: 2h
+  thresholds:
+    error_rate_multiplier: 5
+    error_rate_absolute_percent: 25
+    min_occurrences: 10
+    default_expected_error_rate: 2.0
+    performance_degradation_ms: 60000
+    latency_floor_ms: 5000
+    min_alert_severity: HIGH
+  services:
+    - name: background-worker
+      critical: false
+      dependencies: [database, message-queue]
+      expected_error_rate: 1.0
+    - name: message-queue
+      aliases: [queue, broker, rabbitmq, kafka]
+    - name: database
+      aliases: [db, postgres]
+  filters:
+    min_level: WARN
+  ignore_patterns:
+    - "Retrying job"
+    - "DEBUG.*development"

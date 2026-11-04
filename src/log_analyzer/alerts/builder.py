@@ -90,7 +90,7 @@ class AlertView:
             "timeline": {
                 "first_occurrence": format_iso(self.first_ts),
                 "last_occurrence": format_iso(self.last_ts),
-                "total_duration_seconds": int(round(self.last_ts - self.first_ts)),
+                "total_duration_seconds": round(self.last_ts - self.first_ts),
             },
             "impact": {
                 "affected_services": self.affected_services,
@@ -139,6 +139,9 @@ class AlertBuilder:
         )
 
     # ------------------------------------------------------------------ classification
+    def category(self, incident: Incident, root: RootCause, cascade: bool) -> str:
+        return self._category(incident, primary_signal(incident, root.service), cascade)
+
     def describe(
         self,
         incident: Incident,
@@ -163,9 +166,7 @@ class AlertBuilder:
             return "cascade"
         if incident.unexplained or set(incident.kinds) <= {"error_rate_spike", "error"}:
             return "error_rate" if "error_rate_spike" in incident.kinds else "errors"
-        if all(
-            s.category is Category.PERFORMANCE for s in incident.first_signals.values()
-        ):
+        if all(s.category is Category.PERFORMANCE for s in incident.first_signals.values()):
             return "performance"
         return primary.category.value if primary else "errors"
 
@@ -199,8 +200,9 @@ class AlertBuilder:
         root = assessment.root
         primary = primary_signal(incident, root.service)
         affected = [root.service] if root.inferred else []
-        affected += sorted(incident.services, key=lambda s: (s != root.service,
-                                                             incident.services[s].first_ts))
+        affected += sorted(
+            incident.services, key=lambda s: (s != root.service, incident.services[s].first_ts)
+        )
         probable = self._probable_cause(root, primary, incident)
         actions = self._actions(incident, root, primary, assessment)
         return AlertView(
@@ -236,7 +238,9 @@ class AlertBuilder:
     def _probable_cause(self, root: RootCause, primary: Signal | None, incident: Incident) -> str:
         if root.inferred:
             callers = sorted({src for src, dst in incident.edges if dst == root.service})
-            return f"{root.service} unavailable (inferred from failing calls by {', '.join(callers)})"
+            return (
+                f"{root.service} unavailable (inferred from failing calls by {', '.join(callers)})"
+            )
         if incident.unexplained:
             return "No common root cause: heterogeneous errors across unrelated services"
         if primary is None:
@@ -305,16 +309,21 @@ class AlertBuilder:
             return lines
         if a.root.inferred:
             lines.append(f"{root} never logged an error itself; it is named by its callers")
-        if primary is not None and primary.event is not None and primary.source is not SignalSource.DETECTOR:
+        if (
+            primary is not None
+            and primary.event is not None
+            and primary.source is not SignalSource.DETECTOR
+        ):
             lines.append(
                 f"{root} reported '{_preview(primary.event.message)}' at {format_clock(primary.ts)}"
             )
         sat = incident.latest_detector.get((root, "resource_saturation"))
         if sat is not None:
             attrs = sat.attributes
-            if attrs.get("trend_start_pct") is not None and attrs["trend_start_pct"] < attrs[
-                "utilization_pct"
-            ]:
+            if (
+                attrs.get("trend_start_pct") is not None
+                and attrs["trend_start_pct"] < attrs["utilization_pct"]
+            ):
                 lines.append(
                     f"{root} {attrs['label']} rose from {attrs['trend_start_pct']:g}% to "
                     f"{attrs['utilization_pct']:g}% between "
@@ -328,7 +337,9 @@ class AlertBuilder:
                     f"exhaustion in ~{format_duration(first_sat.attributes['eta_to_exhaustion_s'])}"
                 )
         latency = [
-            s for (svc, kind), s in incident.latest_detector.items() if kind == "latency_degradation"
+            s
+            for (svc, kind), s in incident.latest_detector.items()
+            if kind == "latency_degradation"
         ]
         for sig in sorted(latency, key=lambda s: s.service != root)[:3]:
             attrs = sig.attributes
@@ -351,9 +362,10 @@ class AlertBuilder:
         if a.cascade:
             members = incident.cascade_members
             starts = [
-                incident.services[m].first_failure_ts
+                ts
                 for m in members
-                if m in incident.services and incident.services[m].first_failure_ts is not None
+                if m in incident.services
+                and (ts := incident.services[m].first_failure_ts) is not None
             ]
             span = (max(starts) - min(starts)) if starts else 0.0
             lines.append(
@@ -378,6 +390,12 @@ class AlertBuilder:
     def _actions(
         self, incident: Incident, root: RootCause, primary: Signal | None, a: Assessment
     ) -> list[str]:
+        if incident.unexplained:
+            return [
+                "Check for a recent deployment or config change affecting many services",
+                "Inspect the top error signatures; fix or silence known-noisy ones",
+                "Watch for any one service or dependency standing out (it would page separately)",
+            ]
         actions: list[str] = []
         for rule in sorted(a.matched_rules, key=lambda r: -r.severity):
             actions.extend(rule.actions)
@@ -388,13 +406,6 @@ class AlertBuilder:
                 actions.extend(sig.actions)
         if a.cascade:
             actions.extend(self._cascade_actions)
-        if incident.unexplained:
-            actions.extend(
-                (
-                    "Check for a recent deployment or config change affecting many services",
-                    "Inspect the top error signatures; silence or fix known-noisy ones",
-                )
-            )
         if not actions:
             actions.append(f"Investigate recent changes and dependencies of {root.service}")
         return list(dict.fromkeys(actions))
@@ -418,14 +429,31 @@ class AlertBuilder:
         root = a.root.service
         lines: list[str] = []
         symptoms = [s for s in a.root.symptoms if s in incident.services]
-        if a.category == "error_rate" and primary is not None:
+        if incident.unexplained:
+            spikes = sorted(
+                (
+                    s
+                    for (_svc, kind), s in incident.latest_detector.items()
+                    if kind == "error_rate_spike"
+                ),
+                key=lambda s: -float(s.attributes.get("rate", 0)),
+            )
+            rates = ", ".join(f"{s.service} {s.attributes['rate']:g}%" for s in spikes[:4])
+            if rates:
+                lines.append(f"Error Rates: {rates}")
+            top = incident.templates.most_common(1)
+            if top:
+                lines.append(f"Top Pattern: {top[0][0]} (x{top[0][1]})")
+            lines.append(
+                f"Root Cause: none identified - {incident.unique_errors} distinct errors "
+                f"across {len(incident.services)} services, no shared failing dependency"
+            )
+        elif a.category == "error_rate" and primary is not None:
             attrs = primary.attributes
             lines.append(f"Error Rate: {attrs.get('rate')}% (baseline: {attrs.get('baseline')}%)")
             top = incident.templates.most_common(1)
             if top:
                 lines.append(f"Pattern: {top[0][0]}")
-            if incident.unexplained:
-                lines.append(f"Services: {', '.join(sorted(incident.services))}")
         elif a.category == "performance" and primary is not None:
             attrs = primary.attributes
             lines.append(
@@ -481,14 +509,12 @@ def _callers(incident: Incident, root: str) -> list[tuple[str, int]]:
 def _second_level(incident: Incident, root: str) -> list[tuple[str, list[str], int]]:
     grouped: dict[str, tuple[list[str], int]] = {}
     for (src, dst), count in incident.edges.items():
-        if dst == root or src == root or dst not in incident.services:
+        if root in (dst, src) or dst not in incident.services:
             continue
         targets, total = grouped.get(src, ([], 0))
         targets.append(dst)
         grouped[src] = (targets, total + count)
-    return sorted(
-        ((src, sorted(t), c) for src, (t, c) in grouped.items()), key=lambda x: -x[2]
-    )
+    return sorted(((src, sorted(t), c) for src, (t, c) in grouped.items()), key=lambda x: -x[2])
 
 
 def _first_failure(incident: Incident, service: str) -> float | None:

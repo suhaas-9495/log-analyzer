@@ -14,7 +14,6 @@ from collections import Counter, deque
 from dataclasses import dataclass, field
 
 from log_analyzer.config.schema import LimitsConfig
-from log_analyzer.processing.templates import template_of
 from log_analyzer.models import (
     FAILURE_CATEGORIES,
     Category,
@@ -24,6 +23,7 @@ from log_analyzer.models import (
     Signal,
     SignalSource,
 )
+from log_analyzer.processing.templates import template_of
 
 _IDS = itertools.count(1)
 _SAMPLES_PER_INCIDENT = 24
@@ -136,8 +136,9 @@ class Incident:
 
     def fingerprint_burst(self, count: int) -> float:
         """Smallest span covering ``count`` repeats of any single fingerprint."""
-        return min((_span(times, count) for times in self.fingerprint_ts.values()),
-                   default=float("inf"))
+        return min(
+            (_span(times, count) for times in self.fingerprint_ts.values()), default=float("inf")
+        )
 
     def failing_services(self) -> list[str]:
         return [name for name, impact in self.services.items() if impact.is_failing]
@@ -254,8 +255,9 @@ class Incident:
         self.opened_at = min(self.opened_at, other.opened_at)
         self.last_activity = max(self.last_activity, other.last_activity)
         if other.last_failure_ts is not None:
-            self.last_failure_ts = max(self.last_failure_ts or other.last_failure_ts,
-                                       other.last_failure_ts)
+            self.last_failure_ts = max(
+                self.last_failure_ts or other.last_failure_ts, other.last_failure_ts
+            )
         for name, theirs in other.services.items():
             mine = self.services.get(name)
             if mine is None:

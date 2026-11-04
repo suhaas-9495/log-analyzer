@@ -29,7 +29,11 @@ _MAX_CONTEXT_ATTEMPTS = 4
 
 
 class Parser(Protocol):
-    """A log format. Implementations must be stateless and thread-safe."""
+    """A log format. Implementations must be stateless and thread-safe.
+
+    Parsers may define ``first_chars`` (a string of characters a line in this format
+    can start with); the chain then only tries them on matching lines.
+    """
 
     name: str
 
@@ -45,9 +49,10 @@ class TextParser:
     """``<timestamp> <LEVEL> [<service>] [RequestID:<id>] <message>``."""
 
     name = "text"
+    first_chars = "0123456789"
     _pattern = re.compile(
         rf"^(?P<ts>{_TS})\s+(?P<level>[A-Za-z]+)\s+\[(?P<service>[^\]]+)\]\s*"
-        r"(?:(?:RequestID|request_id|req_id|rid)[:=](?P<rid>\S+)\s*)?(?P<msg>.*?)\s*$"
+        r"(?:(?:RequestID|request_id|req_id|rid)[:=](?P<rid>\S+)\s*)?(?P<msg>.*)$"
     )
 
     def __init__(self, config: ParserConfig) -> None:
@@ -68,7 +73,7 @@ class TextParser:
             ts=ts,
             level=level,
             service=match["service"].strip(),
-            message=match["msg"],
+            message=match["msg"].rstrip(),
             raw=line,
             fmt=self.name,
             request_id=match["rid"],
@@ -84,8 +89,9 @@ class AppParser:
     """
 
     name = "app"
+    first_chars = "["
     _pattern = re.compile(
-        rf"^\[(?P<ts>{_TS})\]\s+(?P<channel>[\w-]+(?:\.[\w-]+)*?)\.(?P<level>[A-Za-z]+):\s?(?P<msg>.*?)\s*$"
+        rf"^\[(?P<ts>{_TS})\]\s+(?P<channel>[\w-]+(?:\.[\w-]+)*?)\.(?P<level>[A-Za-z]+):\s?(?P<msg>.*)$"
     )
     _trailing_extra = re.compile(r"\s+(?:\[\]|\{\})$")
 
@@ -105,7 +111,7 @@ class AppParser:
             ts = parse_timestamp(match["ts"], self._tz)
         except ValueError:
             return None
-        message = self._trailing_extra.sub("", match["msg"])
+        message = self._trailing_extra.sub("", match["msg"].rstrip())
         context = _trailing_json_object(message)
         channel = match["channel"]
         fields: dict[str, Any] = {"channel": channel}
@@ -132,6 +138,7 @@ class JsonParser:
     """One JSON object per line. Key names are configurable (``parsers.json_*_keys``)."""
 
     name = "json"
+    first_chars = "{"
 
     def __init__(self, config: ParserConfig) -> None:
         self._tz = ZoneInfo(config.default_timezone)
@@ -141,8 +148,13 @@ class JsonParser:
         self._message_keys = config.json_message_keys
         self._rid_keys = config.json_request_id_keys
         self._consumed = frozenset(
-            (*self._ts_keys, *self._level_keys, *self._service_keys, *self._message_keys,
-             *self._rid_keys)
+            (
+                *self._ts_keys,
+                *self._level_keys,
+                *self._service_keys,
+                *self._message_keys,
+                *self._rid_keys,
+            )
         )
 
     def parse(self, line: str, line_no: int) -> LogEvent | None:
@@ -202,9 +214,18 @@ class ParserChain:
         parsers.extend(PARSERS.get(name)(config) for name in config.enabled)
         self.parsers: tuple[Parser, ...] = tuple(parsers)
         self.max_line_length = config.max_line_length
+        self._by_first_char: dict[str, tuple[Parser, ...]] = {}
 
     def parse(self, line: str, line_no: int = 0) -> LogEvent | None:
-        for parser in self.parsers:
+        first = line[:1]
+        candidates = self._by_first_char.get(first)
+        if candidates is None:
+            candidates = tuple(
+                p for p in self.parsers if first in getattr(p, "first_chars", first or " ")
+            )
+            if len(self._by_first_char) < 256:
+                self._by_first_char[first] = candidates
+        for parser in candidates:
             event = parser.parse(line, line_no)
             if event is not None:
                 return event

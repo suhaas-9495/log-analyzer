@@ -18,7 +18,7 @@ class EventFilter:
     def __init__(self, config: FilterConfig) -> None:
         self._min_level = config.min_level
         self._service_regex = config.ignore_service_regex
-        self._pattern_regex = config.ignore_regex
+        self._pattern_regexes = config.ignore_regexes
 
     def reason(self, event: LogEvent) -> FilterReason | None:
         """Why ``event`` should be dropped, or ``None`` to keep it."""
@@ -26,6 +26,8 @@ class EventFilter:
             return FilterReason.LEVEL
         if self._service_regex is not None and self._service_regex.match(event.service):
             return FilterReason.SERVICE
-        if self._pattern_regex is not None and self._pattern_regex.search(event.raw):
-            return FilterReason.PATTERN
+        raw = event.raw
+        for regex in self._pattern_regexes:
+            if regex.search(raw):
+                return FilterReason.PATTERN
         return None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 
 
@@ -56,7 +57,7 @@ def kendall_z(tau: float, n: int) -> float:
     if n < 3:
         return 0.0
     variance = 2.0 * (2 * n + 5) / (9.0 * n * (n - 1))
-    return tau / variance**0.5
+    return tau / math.sqrt(variance)
 
 
 def slope(points: Sequence[tuple[float, float]]) -> float:

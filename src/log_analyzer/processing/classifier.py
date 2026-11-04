@@ -138,7 +138,6 @@ class PatternClassifier:
             targets=frozenset(targets),
         )
 
-
     def _plausible(self, service: str, targets: set[str]) -> set[str]:
         """Keep only dependencies the topology allows (see ServiceDirectory.plausible)."""
         return {t for t in targets if t != service and self._directory.plausible(service, t)}

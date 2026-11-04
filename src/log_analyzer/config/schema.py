@@ -164,7 +164,7 @@ class FilterConfig:
     min_level: Level = Level.INFO
     ignore_services: tuple[str, ...] = ()  # glob patterns, e.g. "dev-*"
     ignore_patterns: tuple[str, ...] = ()  # regexes matched against the raw line
-    ignore_regex: re.Pattern[str] | None = None
+    ignore_regexes: tuple[re.Pattern[str], ...] = ()
     ignore_service_regex: re.Pattern[str] | None = None
 
 
@@ -174,9 +174,7 @@ class ParserConfig:
     plugins: tuple[str, ...] = ()
     default_timezone: str = "UTC"
     app_default_service: str = "app"
-    app_channel_services: Mapping[str, str] = field(
-        default_factory=lambda: MappingProxyType({})
-    )
+    app_channel_services: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     json_timestamp_keys: tuple[str, ...] = ("timestamp", "@timestamp", "time", "ts")
     json_level_keys: tuple[str, ...] = ("level", "severity", "lvl", "log.level")
     json_service_keys: tuple[str, ...] = ("service", "service.name", "app", "logger")

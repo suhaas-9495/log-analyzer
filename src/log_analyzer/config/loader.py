@@ -139,9 +139,7 @@ def _normalise_sections(data: dict[str, Any], origin: str) -> dict[str, Any]:
             result[key] = value
     unknown = sorted(set(result) - set(SECTIONS))
     if unknown:
-        raise ConfigError(
-            origin, f"unknown section(s) {unknown}; allowed: {', '.join(SECTIONS)}"
-        )
+        raise ConfigError(origin, f"unknown section(s) {unknown}; allowed: {', '.join(SECTIONS)}")
     return result
 
 
@@ -599,16 +597,16 @@ def _comparison(raw: Any, path: str, convert: Any) -> Comparison:
 
 
 def _build_filters(s: _Section, ignore_patterns: tuple[str, ...]) -> FilterConfig:
-    for i, pattern in enumerate(ignore_patterns):
-        _compile_text(f"ignore_patterns[{i}]", pattern)
+    # Compiled one by one (not joined): patterns may carry their own inline flags, e.g. (?i).
+    compiled = tuple(
+        _compile_text(f"ignore_patterns[{i}]", pattern) for i, pattern in enumerate(ignore_patterns)
+    )
     services = s.strings("ignore_services")
     cfg = FilterConfig(
         min_level=s.level("min_level", Level.INFO),
         ignore_services=services,
         ignore_patterns=ignore_patterns,
-        ignore_regex=(
-            re.compile("|".join(f"(?:{p})" for p in ignore_patterns)) if ignore_patterns else None
-        ),
+        ignore_regexes=compiled,
         ignore_service_regex=(
             re.compile("|".join(fnmatch.translate(g) for g in services), re.IGNORECASE)
             if services

@@ -14,6 +14,7 @@ alerts *before* the pool runs out rather than after.
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections import deque
 from collections.abc import Sequence
@@ -79,11 +80,9 @@ class SaturationDetector:
     @staticmethod
     def _rising(gauge: _Gauge) -> bool:
         recent = [v for _, v in list(gauge.readings)[-_RISING_READINGS:]]
-        return len(recent) >= 2 and all(b >= a for a, b in zip(recent, recent[1:], strict=False))
+        return len(recent) >= 2 and all(b >= a for a, b in itertools.pairwise(recent))
 
-    def _signal(
-        self, event: LogEvent, sample: MetricSample, gauge: _Gauge, level: int
-    ) -> Signal:
+    def _signal(self, event: LogEvent, sample: MetricSample, gauge: _Gauge, level: int) -> Signal:
         readings = list(gauge.readings)
         low_ts, low = min(readings, key=lambda r: r[1])
         per_second = slope(readings[-8:])

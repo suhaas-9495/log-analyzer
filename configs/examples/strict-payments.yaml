@@ -1,0 +1,51 @@
+# A payments platform with tight SLOs: page earlier and on smaller anomalies.
+analyzer:
+  windows:
+    error_rate_baseline: 10m
+    error_rate_current: 30s
+    alert_grouping: 2m
+  thresholds:
+    error_rate_multiplier: 2
+    error_rate_absolute_percent: 2
+    min_occurrences: 2
+    performance_degradation_ms: 500
+    latency_degradation_ratio: 1.5
+    saturation_warning_ratio: 0.7
+    min_alert_severity: LOW
+  services:
+    - name: payment-api
+      critical: true
+      dependencies: [ledger-db, card-processor, fraud-service]
+      expected_error_rate: 0.01
+    - name: fraud-service
+      critical: true
+      dependencies: [ledger-db]
+      expected_error_rate: 0.05
+    - name: card-processor
+      critical: true
+      aliases: ["card network", "processor"]
+    - name: ledger-db
+      critical: true
+      aliases: [database, db]
+  patterns:
+    # Add a domain-specific rule; it is evaluated before the built-in library.
+    - name: card_declines_spike
+      regex: '(?i)card declined.*code=(?P<code>\w+)'
+      severity: MEDIUM
+      category: dependency
+      target: card-processor
+      group_by: [service, code]
+      title: "Card Declines"
+      probable_cause: "Card processor declining transactions"
+      actions: ["Check the card processor status page and decline codes"]
+    # Turn off a built-in rule that is noisy here.
+    - name: rate_limited
+      enabled: false
+  alert_rules:
+    - name: "Ledger Unavailable"
+      condition:
+        all:
+          - root_cause: "ledger-db"
+          - affected_services: ">=2"
+      severity: CRITICAL
+      auto_escalate: true

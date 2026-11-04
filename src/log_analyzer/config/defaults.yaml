@@ -177,6 +177,7 @@ patterns:
     severity: MEDIUM
     category: performance
     min_level: INFO
+    prefilter: "query"
     target: database
     title: "Slow Database Queries"
     probable_cause: "Slow database queries"
@@ -200,6 +201,7 @@ patterns:
     severity: MEDIUM
     category: performance
     min_level: INFO
+    prefilter: "ms"
     title: "Slow Requests"
     probable_cause: "Requests exceeding the latency threshold"
     actions:

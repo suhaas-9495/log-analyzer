@@ -118,9 +118,7 @@ class LatencyDetector:
             series.frozen_baseline = assessment.baseline
         else:
             return None
-        severity = (
-            Severity.HIGH if assessment.current >= self._hard_threshold else Severity.MEDIUM
-        )
+        severity = Severity.HIGH if assessment.current >= self._hard_threshold else Severity.MEDIUM
         escalated = series.severity is None or severity > series.severity
         if not escalated and event.ts - series.last_emit < self._heartbeat:
             return None

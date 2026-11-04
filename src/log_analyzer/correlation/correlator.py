@@ -168,9 +168,7 @@ class Correlator:
 
     # --------------------------------------------------------------------- linking
     def _candidates(self, signal: Signal) -> list[Incident]:
-        linked = [
-            inc for inc in self._open if not inc.unexplained and self._linked(inc, signal)
-        ]
+        linked = [inc for inc in self._open if not inc.unexplained and self._linked(inc, signal)]
         by_fp = self._by_fingerprint.get(signal.fingerprint)
         if by_fp is not None and by_fp.status is IncidentStatus.OPEN:
             if not by_fp.unexplained:
@@ -231,9 +229,7 @@ class Correlator:
         """
         homes = [inc for inc in self._open if event.service in inc.services]
         if homes:
-            max(homes, key=lambda inc: (not inc.unexplained, inc.last_activity)).add_context(
-                event
-            )
+            max(homes, key=lambda inc: (not inc.unexplained, inc.last_activity)).add_context(event)
 
     # ------------------------------------------------------------------- lifecycle
     def _create(self, signal: Signal) -> Incident:
@@ -315,6 +311,8 @@ class Correlator:
 
     # ------------------------------------------------------------------ evaluation
     def _evaluate(self, incident: Incident, now: float, *, reopened: bool) -> list[AlertEvent]:
+        if incident.alert is None and not self._could_alert(incident):
+            return []  # cheap pre-check: most noise incidents never get near the bar
         stale = now - incident.evaluated_at >= self._reevaluate_after
         if (
             incident.alert is not None
@@ -341,10 +339,10 @@ class Correlator:
                 severity_history=[(now, assessment.severity)],
             )
             self._remember(incident)
-            events = [AlertEvent(AlertEventKind.NEW, now, incident, assessment)]
+            created = [AlertEvent(AlertEventKind.NEW, now, incident, assessment)]
             if incident.unexplained:
-                events.extend(self._fold_into(incident, now))
-            return events
+                created.extend(self._fold_into(incident, now))
+            return created
         changed = False
         if assessment.severity > alert.severity:
             alert.severity = assessment.severity
@@ -374,11 +372,17 @@ class Correlator:
         for incident in list(self._open):
             if incident is noise or incident.unexplained or not self._covers(noise, incident):
                 continue
+            if incident.alert is None:
+                # Not alerting yet, so it cannot be corroborated/critical: only metric
+                # evidence keeps it out of the noise (checked without running RCA).
+                if (
+                    self._config.correlation.inhibit_during_unexplained
+                    and not _METRIC_DETECTORS & incident.kinds.keys()
+                ):
+                    incident.inhibited_by = noise
+                continue
             assessment = self._assessments.get(incident.id) or self._assess(incident)
             if not self._inhibitable(incident, assessment):
-                continue
-            if incident.alert is None:
-                incident.inhibited_by = noise
                 continue
             events.append(AlertEvent(AlertEventKind.MERGED, now, incident, assessment))
             self._alerted.pop(incident.id, None)
@@ -399,7 +403,7 @@ class Correlator:
         severity = incident.max_severity
         if cascade and self._cascade_severity is not None:
             severity = max(severity, self._cascade_severity)
-        category, _ = self._builder.describe(incident, root, cascade, ())
+        category = self._builder.category(incident, root, cascade)
         now = incident.last_activity
         context = RuleContext(
             incident=incident,
@@ -420,6 +424,17 @@ class Correlator:
             severity = max(severity, incident.alert.severity)  # never silently de-escalate
         category, title = self._builder.describe(incident, root, cascade, matched)
         return Assessment(root, cascade, severity, matched, category, title)
+
+    def _could_alert(self, incident: Incident) -> bool:
+        """Necessary (not sufficient) conditions for a first alert, without running RCA."""
+        if incident.unexplained or _METRIC_DETECTORS & incident.kinds.keys():
+            return True
+        if len(incident.cascade_members) >= self._config.thresholds.cascade_min_services:
+            return True
+        needed = incident.min_occurrences_override or self._config.thresholds.min_occurrences
+        if len(incident.services) > 1:
+            return incident.burst(needed) <= self._grouping
+        return incident.fingerprint_burst(needed) <= self._grouping
 
     def _should_alert(self, incident: Incident, assessment: Assessment) -> bool:
         if incident.alert is not None:
@@ -443,8 +458,9 @@ class Correlator:
 
         * a metric detector fired (latency trend, resource saturation), or
         * its root cause is *corroborated*: the root reports the failure itself
-          ("health check failed", "pool exhausted") **and** another service names it
-          as the dependency it is failing on, or
+          ("health check failed", "pool exhausted"), another service names it as the
+          dependency it is failing on, **and** the failures arrive as a burst
+          (``min_occurrences`` within the cascade window), or
         * it is CRITICAL with a root that logged its own failure.
 
         Strong incidents explain their services' error-rate spikes and are never
@@ -461,7 +477,8 @@ class Correlator:
             return True
         root = incident.services.get(assessment.root.service)
         named = any(dst == assessment.root.service for _src, dst in incident.edges)
-        return root is not None and root.self_evidence >= 1.0 and named
+        burst = incident.burst(self._config.thresholds.min_occurrences) <= self._cascade_window
+        return root is not None and root.self_evidence >= 1.0 and named and burst
 
     def _inhibitable(self, incident: Incident, assessment: Assessment) -> bool:
         """Weak incidents can be absorbed by active background noise; strong ones page."""

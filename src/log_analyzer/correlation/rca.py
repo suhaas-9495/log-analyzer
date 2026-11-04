@@ -77,15 +77,18 @@ class RootCauseAnalyzer:
         first_seen = self._first_seen(incident, nodes)
         order = sorted(nodes, key=lambda n: (first_seen[n], n))
         rank = {node: i for i, node in enumerate(order)}
-        failing = {n for n in nodes if n not in incident.services or incident.services[n].is_failing
-                   or incident.services[n].has_detector}
+        failing = {
+            n
+            for n in nodes
+            if n not in incident.services
+            or incident.services[n].is_failing
+            or incident.services[n].has_detector
+        }
         total_weight = self._weights.reach + self._weights.precedence + self._weights.intrinsic
         scores: dict[str, float] = {}
         for node in nodes:
             others = [s for s in services if s != node]
-            reach = (
-                len(dependents[node] & set(others)) / len(others) if others else 0.0
-            )
+            reach = len(dependents[node] & set(others)) / len(others) if others else 0.0
             precedence = 1.0 - rank[node] / (len(nodes) - 1)
             impact = incident.services.get(node)
             intrinsic = impact.self_evidence if impact is not None else _VIRTUAL_EVIDENCE
@@ -123,7 +126,8 @@ class RootCauseAnalyzer:
             impact = incident.services.get(node)
             if impact is not None:
                 seen[node] = (
-                    impact.first_failure_ts if impact.first_failure_ts is not None
+                    impact.first_failure_ts
+                    if impact.first_failure_ts is not None
                     else impact.first_ts
                 )
         for (src, dst), _count in incident.edges.items():
