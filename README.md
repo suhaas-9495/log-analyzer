@@ -48,7 +48,7 @@ Deeper documents:
 ```bash
 make install        # creates .venv and installs the package with dev tools
 make run            # analyze data/sample/test_logs.txt -> console dashboard
-make check          # lint + strict type check + 248 tests (coverage >= 85% enforced)
+make check          # lint + strict type check + 274 tests (coverage >= 85% enforced)
 make demo           # scripted walkthrough: the 4 spec scenarios, streaming, JSON, API
 ```
 
@@ -252,7 +252,7 @@ with Python 3.13:
 |---:|---:|---:|---:|---:|---:|
 | 10,000 | 0.25 s | ~40k lines/s | 24 MB | 6 | 98.6% |
 | 100,000 | 2.7 s | ~37k lines/s | 27 MB | 6 | 99.8% |
-| 1,000,000 | 28.5 s | ~35k lines/s | 36 MB | 11 | 99.96% |
+| 1,000,000 | 30.1 s | ~33k lines/s | 36 MB | 11 | 99.96% |
 
 Against Scenario 4's targets (< 5 s, < 100 MB, ≥ 95% noise reduction for 100k lines):
 - the provided 100k sample runs in 2.7 s at 27 MB with 99.8% noise reduction;
@@ -271,7 +271,7 @@ Scaling to millions of lines per minute is covered in
 
 ## Testing
 
-`make test` runs 248 tests with branch coverage (currently about 96%; the build fails
+`make test` runs 274 tests with branch coverage (currently about 96%; the build fails
 below 85%). `make check` adds `ruff` lint/format and `mypy --strict`.
 
 - **The four spec scenarios** use the spec's exact log lines ([`tests/integration/test_spec_scenarios.py`](tests/integration/test_spec_scenarios.py)):
@@ -280,7 +280,7 @@ below 85%). `make check` adds `ruff` lint/format and `mypy --strict`.
   3. Dev logs ignored, and the production issue alerted.
   4. 100k lines in a subprocess, under 5 s and 100 MB, with correct alerts and at least 95% noise reduction.
 - **Provided samples:** both files produce exactly the expected incidents, with the right roots and the spec output format ([`test_sample_logs.py`](tests/integration/test_sample_logs.py)).
-- **Unit tests per module:** parsers (including garbled and edge-case input), config validation (about 50 invalid configs), classifier, detectors, correlation rules, root-cause analysis, rule DSL, alert format, engine statistics, CLI (stdin, gzip, multi-file merge, exit codes), HTTP API (real server, error codes), generator, and plugins.
+- **Unit tests per module:** parsers (including garbled and edge-case input, and OpenTelemetry records and batches), config validation (about 50 invalid configs), classifier, detectors, correlation rules, root-cause analysis, rule DSL, alert format, engine statistics, CLI (stdin, gzip, multi-file merge, exit codes), HTTP API (real server, error codes, `/metrics`), generator, and plugins.
 - **Robustness:** `make robustness` generates 12 random datasets and checks that every injected incident is found with the right root cause. Results are in DESIGN.md.
 
 ## Build targets
