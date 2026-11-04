@@ -105,7 +105,7 @@ class TestAppParser:
 
     def test_spec_example_extracts_trailing_context(self) -> None:
         event = self.parser.parse(
-            '[2024-01-10 10:15:26] production.ERROR: Unhandled exception in OrderController '
+            "[2024-01-10 10:15:26] production.ERROR: Unhandled exception in OrderController "
             '{"exception":"PaymentGatewayException","message":"Payment provider unavailable",'
             '"user_id":12345,"order_id":67890}',
             1,
@@ -163,8 +163,12 @@ class TestParserChain:
         assert event.service == "billing"
 
     def test_bad_plugin_references(self) -> None:
-        for ref in ("nope", "missing.module:X", "tests.unit.plugin_examples:Missing",
-                    "tests.unit.plugin_examples:NOT_CALLABLE"):
+        for ref in (
+            "nope",
+            "missing.module:X",
+            "tests.unit.plugin_examples:Missing",
+            "tests.unit.plugin_examples:NOT_CALLABLE",
+        ):
             with pytest.raises(PluginError):
                 ParserChain(ParserConfig(plugins=(ref,)))
 

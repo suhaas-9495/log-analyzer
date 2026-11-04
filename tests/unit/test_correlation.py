@@ -29,8 +29,9 @@ class Harness:
         self.events: list[Any] = []
 
     def log(self, offset: float, service: str, message: str, level: Level = Level.ERROR) -> None:
-        signal = self.classifier.classify(event(message, service=service, level=level,
-                                                ts=T0 + offset, request_id=f"r{offset}"))
+        signal = self.classifier.classify(
+            event(message, service=service, level=level, ts=T0 + offset, request_id=f"r{offset}")
+        )
         assert signal is not None, message
         self.events.extend(self.correlator.ingest(signal))
 
@@ -42,12 +43,23 @@ class Harness:
 
 
 def detector_signal(kind: str, service: str, offset: float, **attrs: Any) -> Signal:
-    category = {"error_rate_spike": Category.AVAILABILITY, "resource_saturation": Category.RESOURCE,
-                "latency_degradation": Category.PERFORMANCE}[kind]
-    return Signal(kind=kind, source=SignalSource.DETECTOR, ts=T0 + offset, service=service,
-                  severity=Severity.HIGH if kind != "latency_degradation" else Severity.MEDIUM,
-                  category=category, fingerprint=(kind, service), template=f"{kind} {service}",
-                  event=event("x", service=service, ts=T0 + offset), attributes=attrs)
+    category = {
+        "error_rate_spike": Category.AVAILABILITY,
+        "resource_saturation": Category.RESOURCE,
+        "latency_degradation": Category.PERFORMANCE,
+    }[kind]
+    return Signal(
+        kind=kind,
+        source=SignalSource.DETECTOR,
+        ts=T0 + offset,
+        service=service,
+        severity=Severity.HIGH if kind != "latency_degradation" else Severity.MEDIUM,
+        category=category,
+        fingerprint=(kind, service),
+        template=f"{kind} {service}",
+        event=event("x", service=service, ts=T0 + offset),
+        attributes=attrs,
+    )
 
 
 @pytest.fixture
@@ -68,7 +80,10 @@ def test_explicit_dependency_evidence_builds_one_cascade(config: AnalyzerConfig)
     assert len(alerts) == 1
     incident, assessment = alerts[0]
     assert set(incident.services) == {
-        "payment-provider", "payment-service", "order-service", "api-gateway"
+        "payment-provider",
+        "payment-service",
+        "order-service",
+        "api-gateway",
     }
     assert assessment.cascade
     assert assessment.severity is Severity.CRITICAL
@@ -88,7 +103,10 @@ def test_timeouts_are_backdated_into_the_cascade_window(config: AnalyzerConfig) 
     h.log(30.06, "api-gateway", "Connection timeout to order-service after 30000ms")
     (incident,) = h.correlator.open_incidents()
     assert incident.cascade_members == [
-        "database", "order-service", "inventory-service", "api-gateway"
+        "database",
+        "order-service",
+        "inventory-service",
+        "api-gateway",
     ]
 
 
@@ -175,8 +193,11 @@ def test_strong_incidents_are_not_absorbed_by_noise(config: AnalyzerConfig) -> N
     h = Harness(config)
     for i, svc in enumerate(["order-service", "inventory-service", "web-app"]):
         h.signal(detector_signal("error_rate_spike", svc, i, rate=50.0, baseline=0.1))
-    h.signal(detector_signal("resource_saturation", "database", 5, utilization_pct=96.0,
-                             level="critical"))
+    h.signal(
+        detector_signal(
+            "resource_saturation", "database", 5, utilization_pct=96.0, level="critical"
+        )
+    )
     titles = {a.title for _, a in h.correlator.alerts()}
     assert len(titles) == 2
 
@@ -220,20 +241,36 @@ def _incident(config: AnalyzerConfig, signals: list[Signal]) -> Incident:
     return incident
 
 
-def _sig(service: str, offset: float, category: Category, targets: frozenset[str] = frozenset(),
-         level: Level = Level.ERROR) -> Signal:
-    return Signal(kind=f"k-{category.value}", source=SignalSource.PATTERN, ts=T0 + offset,
-                  service=service, severity=Severity.HIGH, category=category,
-                  fingerprint=(service, category.value), template="t", targets=targets,
-                  event=event("m", service=service, level=level, ts=T0 + offset))
+def _sig(
+    service: str,
+    offset: float,
+    category: Category,
+    targets: frozenset[str] = frozenset(),
+    level: Level = Level.ERROR,
+) -> Signal:
+    return Signal(
+        kind=f"k-{category.value}",
+        source=SignalSource.PATTERN,
+        ts=T0 + offset,
+        service=service,
+        severity=Severity.HIGH,
+        category=category,
+        fingerprint=(service, category.value),
+        template="t",
+        targets=targets,
+        event=event("m", service=service, level=level, ts=T0 + offset),
+    )
 
 
 def test_rca_prefers_the_deepest_self_reporting_dependency(config: AnalyzerConfig) -> None:
-    incident = _incident(config, [
-        _sig("api-gateway", 2, Category.DEPENDENCY, frozenset({"order-service"})),
-        _sig("order-service", 1, Category.DEPENDENCY, frozenset({"database"})),
-        _sig("database", 0, Category.RESOURCE),
-    ])
+    incident = _incident(
+        config,
+        [
+            _sig("api-gateway", 2, Category.DEPENDENCY, frozenset({"order-service"})),
+            _sig("order-service", 1, Category.DEPENDENCY, frozenset({"database"})),
+            _sig("database", 0, Category.RESOURCE),
+        ],
+    )
     rca = RootCauseAnalyzer(ServiceDirectory(config), config.correlation.rca_weights)
     root = rca.analyze(incident)
     assert root.service == "database"
@@ -243,12 +280,16 @@ def test_rca_prefers_the_deepest_self_reporting_dependency(config: AnalyzerConfi
 
 
 def test_rca_infers_a_silent_dependency(config: AnalyzerConfig) -> None:
-    incident = _incident(config, [
-        _sig("payment-service", 0, Category.DEPENDENCY, frozenset({"payment-provider"})),
-        _sig("order-service", 1, Category.DEPENDENCY, frozenset({"payment-service"})),
-    ])
+    incident = _incident(
+        config,
+        [
+            _sig("payment-service", 0, Category.DEPENDENCY, frozenset({"payment-provider"})),
+            _sig("order-service", 1, Category.DEPENDENCY, frozenset({"payment-service"})),
+        ],
+    )
     root = RootCauseAnalyzer(ServiceDirectory(config), config.correlation.rca_weights).analyze(
-        incident)
+        incident
+    )
     assert root.service == "payment-provider"
     assert root.inferred
 
@@ -273,23 +314,65 @@ def test_self_evidence_scale() -> None:
 
 # -------------------------------------------------------------------------------- rules
 def test_rule_engine_predicates(config: AnalyzerConfig) -> None:
-    rules = build_config({**TOPOLOGY, "alert_rules": [
-        {"name": "focus", "severity": "HIGH", "condition": {"all": [
-            {"service": "api-gateway"}, {"error_rate": ">5%"}, {"duration": ">=2s"}]}},
-        {"name": "any", "severity": "LOW", "condition": {"any": [
-            {"root_cause": "nope"}, {"category": "cascade"}, {"error_count": ">=2"}]}},
-        {"name": "pattern", "severity": "LOW", "condition": {"all": [
-            {"pattern": "(?i)timeout"}, {"unique_errors": ">=1"}, {"severity": ">=HIGH"},
-            {"cascade": False}, {"affected_services": "2"}]}},
-    ]}).alert_rules
-    incident = _incident(config, [
-        _sig("api-gateway", 0, Category.DEPENDENCY, frozenset({"order-service"})),
-        _sig("order-service", 3, Category.RESOURCE),
-    ])
+    rules = build_config(
+        {
+            **TOPOLOGY,
+            "alert_rules": [
+                {
+                    "name": "focus",
+                    "severity": "HIGH",
+                    "condition": {
+                        "all": [
+                            {"service": "api-gateway"},
+                            {"error_rate": ">5%"},
+                            {"duration": ">=2s"},
+                        ]
+                    },
+                },
+                {
+                    "name": "any",
+                    "severity": "LOW",
+                    "condition": {
+                        "any": [
+                            {"root_cause": "nope"},
+                            {"category": "cascade"},
+                            {"error_count": ">=2"},
+                        ]
+                    },
+                },
+                {
+                    "name": "pattern",
+                    "severity": "LOW",
+                    "condition": {
+                        "all": [
+                            {"pattern": "(?i)timeout"},
+                            {"unique_errors": ">=1"},
+                            {"severity": ">=HIGH"},
+                            {"cascade": False},
+                            {"affected_services": "2"},
+                        ]
+                    },
+                },
+            ],
+        }
+    ).alert_rules
+    incident = _incident(
+        config,
+        [
+            _sig("api-gateway", 0, Category.DEPENDENCY, frozenset({"order-service"})),
+            _sig("order-service", 3, Category.RESOURCE),
+        ],
+    )
     incident.templates["Connection timeout to order-service"] += 1
     rates = {"api-gateway": 12.0, "order-service": 1.0}
-    ctx = RuleContext(incident=incident, root_cause="order-service", category="resource",
-                      cascade=False, severity=Severity.HIGH, error_rate=lambda s: rates[s])
+    ctx = RuleContext(
+        incident=incident,
+        root_cause="order-service",
+        category="resource",
+        cascade=False,
+        severity=Severity.HIGH,
+        error_rate=lambda s: rates[s],
+    )
     names = {r.name for r in RuleEngine(rules).matching(ctx)}
     assert {"focus", "any", "pattern"} <= names
     rates["api-gateway"] = 1.0
@@ -313,8 +396,16 @@ def test_alert_dict_follows_the_spec_format(config: AnalyzerConfig) -> None:
     view = AlertBuilder(config).build(incident, assessment)
     data = view.to_dict()
     assert list(data)[:10] == [
-        "alert_id", "severity", "title", "summary", "timeline", "impact",
-        "root_cause_analysis", "suggested_actions", "sample_logs", "deduplication_stats",
+        "alert_id",
+        "severity",
+        "title",
+        "summary",
+        "timeline",
+        "impact",
+        "root_cause_analysis",
+        "suggested_actions",
+        "sample_logs",
+        "deduplication_stats",
     ]
     assert data["timeline"]["total_duration_seconds"] == 5
     assert data["impact"]["error_count"] == 5
@@ -328,5 +419,6 @@ def test_alert_dict_follows_the_spec_format(config: AnalyzerConfig) -> None:
     assert data["cascading_failure"] is True
     assert data["status"] == "active"
     with pytest.raises(ValueError, match="has not alerted"):
-        AlertBuilder(config).build(Incident(_sig("x", 0, Category.RESOURCE), config.limits, 30.0),
-                                   assessment)
+        AlertBuilder(config).build(
+            Incident(_sig("x", 0, Category.RESOURCE), config.limits, 30.0), assessment
+        )

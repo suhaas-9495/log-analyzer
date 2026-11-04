@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "Intelligent log analyzer: parses multi-format logs, detects anomalies, correlates failures and emits deduplicated, root-caused alerts."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Proprietary" }
+license = "LicenseRef-Proprietary"
 dependencies = [
     "PyYAML>=6.0,<7",
 ]
@@ -85,7 +85,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S603", "S607", "PLC0415", "PLR2004"]
+"tests/**" = ["S101", "S311", "S603", "S607", "PLC0415", "PLR2004", "PLR0917"]
+"scripts/**" = ["S603", "T201"]
 
 # ------------------------------------------------------------------ mypy
 [tool.mypy]

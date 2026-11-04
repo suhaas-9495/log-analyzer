@@ -270,16 +270,17 @@ class AlertBuilder:
             )
         if a.category == "cascade" or (others and a.category != "performance"):
             listed = ", ".join(others[:5]) + (", ..." if len(others) > 5 else "")
+            cause = _strip_suffix(probable, f" ({root})")
             return (
-                f"{probable} on {root}, causing cascading failures in "
+                f"{root}: {cause}, causing cascading failures in "
                 f"{len(others)} dependent service{'s' if len(others) != 1 else ''}: {listed}."
             )
         if a.category == "performance" and primary is not None:
             attrs = primary.attributes
             text = (
-                f"{str(attrs.get('label', 'latency')).capitalize()} on {root} rose to "
-                f"{attrs.get('current_ms')}ms ({attrs.get('ratio')}x the "
-                f"{attrs.get('baseline_ms')}ms baseline) and is still trending up"
+                f"{_subject(root, str(attrs.get('label', 'latency')))} rose to "
+                f"{_ms(attrs.get('current_ms'))} ({attrs.get('ratio')}x the "
+                f"{_ms(attrs.get('baseline_ms'))} baseline) and is still trending up"
             )
             if others:
                 text += f"; dependents also slowing: {', '.join(others)}"
@@ -352,14 +353,14 @@ class AlertBuilder:
         for sig in sorted(latency, key=lambda s: s.service != root)[:3]:
             attrs = sig.attributes
             lines.append(
-                f"{sig.service} {attrs['label']} {attrs['current_ms']:g}ms vs "
-                f"{attrs['baseline_ms']:g}ms baseline ({attrs['ratio']:g}x, trend tau "
-                f"{attrs['trend_tau']:g})"
+                f"{_subject(sig.service, attrs['label'])} {_ms(attrs['current_ms'])} vs "
+                f"{_ms(attrs['baseline_ms'])} baseline ({attrs['ratio']:g}x, rising: "
+                f"Kendall tau {attrs['trend_tau']:g} over {attrs.get('samples', '?')} samples)"
             )
         callers = _callers(incident, root)
         if callers:
-            first_root = _first_failure(incident, root)
-            window = f" starting {format_clock(first_root)}" if first_root else ""
+            blamed_at = [s.ts for s in incident.first_signals.values() if root in s.targets]
+            window = f" from {format_clock(min(blamed_at))}" if blamed_at else ""
             listed = ", ".join(f"{svc} ({count})" for svc, count in callers[:5])
             lines.append(
                 f"{len(callers)} service{'s' if len(callers) != 1 else ''} failed calling "
@@ -469,8 +470,8 @@ class AlertBuilder:
         elif a.category == "performance" and primary is not None:
             attrs = primary.attributes
             lines.append(
-                f"Latency: {attrs.get('current_ms')}ms, p95 {attrs.get('p95_ms')}ms "
-                f"(baseline: {attrs.get('baseline_ms')}ms, {attrs.get('ratio')}x)"
+                f"Latency: {_ms(attrs.get('current_ms'))}, p95 {_ms(attrs.get('p95_ms'))} "
+                f"(baseline: {_ms(attrs.get('baseline_ms'))}, {attrs.get('ratio')}x)"
             )
             if attrs.get("eta_to_threshold_s"):
                 lines.append(
@@ -535,6 +536,19 @@ def _second_level(incident: Incident, root: str) -> list[tuple[str, list[str], i
     return sorted(((src, sorted(t), c) for src, (t, c) in grouped.items()), key=lambda x: -x[2])
 
 
-def _first_failure(incident: Incident, service: str) -> float | None:
-    impact = incident.services.get(service)
-    return impact.first_failure_ts if impact else None
+def _subject(service: str, label: str) -> str:
+    """``database`` + ``database query time`` -> ``Database query time`` (no repetition)."""
+    if service.replace("-", " ").lower() in label.lower():
+        return label[:1].upper() + label[1:]
+    return f"{service} {label}"
+
+
+def _ms(value: Any) -> str:
+    try:
+        return f"{float(value):.0f}ms"
+    except (TypeError, ValueError):
+        return "?"
+
+
+def _strip_suffix(text: str, suffix: str) -> str:
+    return text[: -len(suffix)] if text.endswith(suffix) else text

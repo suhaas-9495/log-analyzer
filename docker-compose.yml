@@ -1,0 +1,24 @@
+# `docker compose up api` runs the HTTP API; `docker compose run --rm analyzer` analyzes
+# ./data/sample/test_logs.txt (mount any directory of logs instead).
+services:
+  api:
+    build: .
+    image: log-analyzer:latest
+    command: ["serve", "--log-level", "INFO"]
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  analyzer:
+    build: .
+    image: log-analyzer:latest
+    volumes:
+      - ./data/sample:/logs:ro
+      - ./configs:/app/configs:ro
+    command: ["--file", "/logs/test_logs.txt"]
+    profiles: ["cli"]

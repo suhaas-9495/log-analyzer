@@ -49,7 +49,8 @@ def test_window_scoped_result_and_service_status(config: AnalyzerConfig) -> None
     assert statuses["payment-service"] == "CRITICAL"
     payment = next(s for s in full.services if s.name == "payment-service")
     assert payment.error_rate == 100.0
-    assert payment.trend_percent is not None and payment.trend_percent > 0
+    assert payment.trend_percent is not None
+    assert payment.trend_percent > 0
 
 
 def test_noise_reduction_definition() -> None:
@@ -70,7 +71,9 @@ def test_advance_clock_resolves_idle_incidents() -> None:
 
 
 def test_plugin_detector_can_raise_alerts() -> None:
-    config = build_config({"detectors": {"plugins": ["tests.unit.plugin_examples:KeywordDetector"]}})
+    config = build_config(
+        {"detectors": {"plugins": ["tests.unit.plugin_examples:KeywordDetector"]}}
+    )
     result = analyze(["2024-01-10 10:00:00 INFO [deploy] canary-failed on host-3"], config)
     assert len(result.alerts) == 1
     assert result.alerts[0].severity.name == "HIGH"
@@ -90,9 +93,17 @@ def test_peak_memory_is_reported() -> None:
 def test_console_dashboard_has_the_spec_sections(config: AnalyzerConfig) -> None:
     result = analyze((FIXTURES / "scenario1_cascade.log").read_text().splitlines(), config)
     text = ConsoleRenderer(color=False).dashboard(result)
-    for section in ("LOG ANALYSIS DASHBOARD", "Time Window: 2024-01-10 10:00:00 - 10:01:17",
-                    "Logs Processed:", "Errors Detected:", "Alerts Generated:",
-                    "Noise Reduction:", "ALERTS", "TREND ANALYSIS:", "Status"):
+    for section in (
+        "LOG ANALYSIS DASHBOARD",
+        "Time Window: 2024-01-10 10:00:00 - 10:01:17",
+        "Logs Processed:",
+        "Errors Detected:",
+        "Alerts Generated:",
+        "Noise Reduction:",
+        "ALERTS",
+        "TREND ANALYSIS:",
+        "Status",
+    ):
         assert section in text
     assert "[CRITICAL] Database Connection Crisis" in text
     assert "Root Cause:" in text
@@ -118,7 +129,8 @@ def test_event_lines_and_json(config: AnalyzerConfig) -> None:
     rendered = [renderer.event(e) for e in events]
     assert rendered[0].startswith("[10:01:00] NEW")
     assert "root cause: database" in rendered[-2]
-    assert "RESOLVED" in rendered[-1] and "lasted" in rendered[-1]
+    assert "RESOLVED" in rendered[-1]
+    assert "lasted" in rendered[-1]
     view = analyzer.correlator.builder.build(events[0].incident, events[0].assessment)
     payload = json.loads(event_json(events[0], view.to_dict()))
     assert payload["event"] == "NEW"
@@ -129,7 +141,8 @@ def test_json_report_shape(config: AnalyzerConfig) -> None:
     result = analyze((FIXTURES / "scenario3_dev_noise.log").read_text().splitlines(), config)
     report = report_dict(result)
     assert report["analysis_period"] == {
-        "start": "2024-01-10T10:00:01Z", "end": "2024-01-10T10:00:06Z"
+        "start": "2024-01-10T10:00:01Z",
+        "end": "2024-01-10T10:00:06Z",
     }
     assert report["statistics"]["total_logs"] == 7
     assert report["statistics"]["logs_ignored"] == 3

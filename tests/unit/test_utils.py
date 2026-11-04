@@ -50,8 +50,16 @@ class TestTimeutil:
 
     @pytest.mark.parametrize(
         ("value", "seconds"),
-        [("5m", 300), ("300s", 300), ("1.5h", 5400), ("250ms", 0.25), (60, 60), ("90", 90),
-         ("2 min", 120), ("1d", 86400)],
+        [
+            ("5m", 300),
+            ("300s", 300),
+            ("1.5h", 5400),
+            ("250ms", 0.25),
+            (60, 60),
+            ("90", 90),
+            ("2 min", 120),
+            ("1d", 86400),
+        ],
     )
     def test_parse_duration(self, value: str | float, seconds: float) -> None:
         assert parse_duration(value) == pytest.approx(seconds)
@@ -91,8 +99,13 @@ class TestStats:
 class TestModels:
     @pytest.mark.parametrize(
         ("raw", "level"),
-        [("warning", Level.WARN), ("FATAL", Level.CRITICAL), (" err ", Level.ERROR),
-         ("trace", Level.DEBUG), ("notice", Level.INFO)],
+        [
+            ("warning", Level.WARN),
+            ("FATAL", Level.CRITICAL),
+            (" err ", Level.ERROR),
+            ("trace", Level.DEBUG),
+            ("notice", Level.INFO),
+        ],
     )
     def test_level_aliases(self, raw: str, level: Level) -> None:
         assert Level.parse(raw) is level

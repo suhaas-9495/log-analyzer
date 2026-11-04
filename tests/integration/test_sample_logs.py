@@ -13,8 +13,16 @@ from log_analyzer.output.report import report_dict
 from tests.conftest import SAMPLE_10K, analyze_file
 
 SPEC_ALERT_KEYS = [
-    "alert_id", "severity", "title", "summary", "timeline", "impact",
-    "root_cause_analysis", "suggested_actions", "sample_logs", "deduplication_stats",
+    "alert_id",
+    "severity",
+    "title",
+    "summary",
+    "timeline",
+    "impact",
+    "root_cause_analysis",
+    "suggested_actions",
+    "sample_logs",
+    "deduplication_stats",
 ]
 
 
@@ -31,8 +39,13 @@ def _assert_expected_incidents(result: AnalysisResult) -> None:
     assert pool.probable_cause == "Database connection pool exhausted"
     assert pool.confidence >= 0.9
     assert pool.auto_escalate
-    assert {"order-service", "inventory-service", "payment-service", "user-service",
-            "api-gateway"} <= set(pool.affected_services)
+    assert {
+        "order-service",
+        "inventory-service",
+        "payment-service",
+        "user-service",
+        "api-gateway",
+    } <= set(pool.affected_services)
 
     cascade = next(a for a in critical if a.root_service == "payment-provider")
     assert cascade.cascade
@@ -95,14 +108,21 @@ def test_alerts_follow_the_spec_output_format(config: AnalyzerConfig) -> None:
         assert list(alert)[: len(SPEC_ALERT_KEYS)] == SPEC_ALERT_KEYS
         assert alert["alert_id"].startswith("ALR-20251007-")
         assert set(alert["timeline"]) == {
-            "first_occurrence", "last_occurrence", "total_duration_seconds"
+            "first_occurrence",
+            "last_occurrence",
+            "total_duration_seconds",
         }
         assert set(alert["impact"]) == {
-            "affected_services", "error_count", "unique_errors", "estimated_failed_requests"
+            "affected_services",
+            "error_count",
+            "unique_errors",
+            "estimated_failed_requests",
         }
         assert set(alert["root_cause_analysis"]) == {"probable_cause", "confidence", "evidence"}
         assert 0 < alert["root_cause_analysis"]["confidence"] <= 1
         assert alert["suggested_actions"][0].startswith("1. ")
         assert set(alert["deduplication_stats"]) == {
-            "total_logs_analyzed", "logs_grouped", "noise_reduction_percent"
+            "total_logs_analyzed",
+            "logs_grouped",
+            "noise_reduction_percent",
         }

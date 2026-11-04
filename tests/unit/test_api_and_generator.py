@@ -62,7 +62,10 @@ def server(config: AnalyzerConfig) -> Iterator[tuple[str, int]]:
 
 
 def request(
-    target: tuple[str, int], method: str, path: str, body: bytes | None = None,
+    target: tuple[str, int],
+    method: str,
+    path: str,
+    body: bytes | None = None,
     headers: dict[str, str] | None = None,
 ) -> tuple[int, dict[str, Any]]:
     conn = http.client.HTTPConnection(*target, timeout=10)
@@ -75,8 +78,9 @@ def request(
 
 def test_http_analyze_and_health(server: tuple[str, int]) -> None:
     body = json.dumps({"logs": SCENARIO1, "window": "5m"}).encode()
-    status, payload = request(server, "POST", "/analyze", body,
-                              {"Content-Type": "application/json"})
+    status, payload = request(
+        server, "POST", "/analyze", body, {"Content-Type": "application/json"}
+    )
     assert status == 200
     assert payload["statistics"]["alerts_generated"] == 1
     assert payload["alerts"][0]["root_cause_service"] == "database"
@@ -98,8 +102,12 @@ def test_http_analyze_and_health(server: tuple[str, int]) -> None:
     ],
 )
 def test_http_errors(
-    server: tuple[str, int], method: str, path: str, body: bytes | None,
-    headers: dict[str, str] | None, status: int,
+    server: tuple[str, int],
+    method: str,
+    path: str,
+    body: bytes | None,
+    headers: dict[str, str] | None,
+    status: int,
 ) -> None:
     code, payload = request(server, method, path, body, headers)
     assert code == status
@@ -124,8 +132,14 @@ def test_generator_is_deterministic_and_complete() -> None:
     assert first.getvalue() == second.getvalue()
     text = first.getvalue()
     assert abs(count - 3000) < 150
-    for marker in ("Connection pool exhausted", "Service health check failed",
-                   "Slow query detected", "Starting hot reload", "production.", '"level"'):
+    for marker in (
+        "Connection pool exhausted",
+        "Service health check failed",
+        "Slow query detected",
+        "Starting hot reload",
+        "production.",
+        '"level"',
+    ):
         assert marker in text
 
 

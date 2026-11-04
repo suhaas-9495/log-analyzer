@@ -20,31 +20,36 @@ def run(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, str, str]:
 
 
 def test_file_to_console_dashboard(capsys: pytest.CaptureFixture[str]) -> None:
-    code, out, _ = run(capsys, "--file", SCENARIO1, "--config", str(CONFIG_PATH),
-                       "--color", "never")
+    code, out, _ = run(
+        capsys, "--file", SCENARIO1, "--config", str(CONFIG_PATH), "--color", "never"
+    )
     assert code == 0
     assert "LOG ANALYSIS DASHBOARD" in out
     assert "[CRITICAL] Database Connection Crisis" in out
 
 
 def test_events_flag_prints_lifecycle(capsys: pytest.CaptureFixture[str]) -> None:
-    code, out, _ = run(capsys, "-f", SCENARIO1, "-c", str(CONFIG_PATH), "--events",
-                       "--color", "never")
+    code, out, _ = run(
+        capsys, "-f", SCENARIO1, "-c", str(CONFIG_PATH), "--events", "--color", "never"
+    )
     assert code == 0
     assert "NEW" in out.splitlines()[0]
 
 
 def test_json_report_to_file(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     target = tmp_path / "report.json"
-    code, out, _ = run(capsys, "-f", SCENARIO1, "-c", str(CONFIG_PATH), "--format", "json",
-                       "-o", str(target))
+    code, out, _ = run(
+        capsys, "-f", SCENARIO1, "-c", str(CONFIG_PATH), "--format", "json", "-o", str(target)
+    )
     assert code == 0
     assert out == ""
     report = json.loads(target.read_text())
     assert report["statistics"]["alerts_generated"] == 1
 
 
-def test_console_report_to_file_is_plain(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+def test_console_report_to_file_is_plain(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
     target = tmp_path / "dashboard.txt"
     run(capsys, "-f", SCENARIO1, "-c", str(CONFIG_PATH), "--color", "always", "-o", str(target))
     text = target.read_text()
@@ -62,24 +67,47 @@ def test_jsonl_streams_events_then_summary(capsys: pytest.CaptureFixture[str]) -
 
 
 def test_window_and_fail_on(capsys: pytest.CaptureFixture[str]) -> None:
-    code, out, _ = run(capsys, "-f", SCENARIO1, "-c", str(CONFIG_PATH), "--format", "json",
-                       "--window", "30s", "--fail-on", "HIGH")
+    code, out, _ = run(
+        capsys,
+        "-f",
+        SCENARIO1,
+        "-c",
+        str(CONFIG_PATH),
+        "--format",
+        "json",
+        "--window",
+        "30s",
+        "--fail-on",
+        "HIGH",
+    )
     assert code == cli.EXIT_ALERTS
     assert json.loads(out)["analysis_period"]["start"] == "2024-01-10T10:00:47Z"
-    code, _, _ = run(capsys, "-f", str(FIXTURES / "scenario2_degradation.log"), "-c",
-                     str(CONFIG_PATH), "--fail-on", "CRITICAL", "--color", "never")
+    code, _, _ = run(
+        capsys,
+        "-f",
+        str(FIXTURES / "scenario2_degradation.log"),
+        "-c",
+        str(CONFIG_PATH),
+        "--fail-on",
+        "CRITICAL",
+        "--color",
+        "never",
+    )
     assert code == 0
 
 
-def test_multiple_files_are_merged_by_time(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+def test_multiple_files_are_merged_by_time(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
     lines = Path(SCENARIO1).read_text().splitlines()
     first = tmp_path / "db.log"
     second = tmp_path / "apps.log.gz"
     first.write_text("\n".join(lines[:3]) + "\n")
     with gzip.open(second, "wt", encoding="utf-8") as handle:
         handle.write("\n".join(lines[3:]) + "\n")
-    code, out, _ = run(capsys, "-f", str(second), "-f", str(first), "-c", str(CONFIG_PATH),
-                       "--format", "json")
+    code, out, _ = run(
+        capsys, "-f", str(second), "-f", str(first), "-c", str(CONFIG_PATH), "--format", "json"
+    )
     assert code == 0
     report = json.loads(out)
     assert report["statistics"]["total_logs"] == 7
@@ -94,7 +122,9 @@ def test_stdin_stream(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.Mo
     assert "LOG ANALYSIS DASHBOARD" in out
 
 
-def test_stdin_dash_and_conflicts(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stdin_dash_and_conflicts(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO(Path(SCENARIO1).read_text()))
     code, out, _ = run(capsys, "-f", "-", "-c", str(CONFIG_PATH), "--format", "json")
     assert code == 0
@@ -104,7 +134,9 @@ def test_stdin_dash_and_conflicts(capsys: pytest.CaptureFixture[str], monkeypatc
     assert "cannot combine" in err
 
 
-def test_no_input_on_a_terminal(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_no_input_on_a_terminal(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     class Tty(io.StringIO):
         def isatty(self) -> bool:
             return True
@@ -130,7 +162,9 @@ def test_errors_are_reported_cleanly(capsys: pytest.CaptureFixture[str], tmp_pat
         cli.main(["--format", "xml"])
 
 
-def test_config_from_environment(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_from_environment(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv(cli.CONFIG_ENV, str(CONFIG_PATH))
     code, out, _ = run(capsys, "-f", SCENARIO1, "--format", "json")
     assert code == 0

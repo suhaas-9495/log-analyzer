@@ -15,10 +15,12 @@ from tests.conftest import EventFactory
 # ----------------------------------------------------------------------------- filters
 class TestEventFilter:
     def test_level_service_glob_and_pattern(self, make_event: EventFactory) -> None:
-        config = build_config({
-            "filters": {"min_level": "INFO", "ignore_services": ["dev-*", "localhost"]},
-            "ignore_patterns": ["Health check endpoint", "(?i)hot reload"],
-        })
+        config = build_config(
+            {
+                "filters": {"min_level": "INFO", "ignore_services": ["dev-*", "localhost"]},
+                "ignore_patterns": ["Health check endpoint", "(?i)hot reload"],
+            }
+        )
         f = EventFilter(config.filters)
         assert f.reason(make_event(level=Level.DEBUG)) is FilterReason.LEVEL
         assert f.reason(make_event(service="dev-server")) is FilterReason.SERVICE
@@ -40,10 +42,15 @@ class TestEventFilter:
 @pytest.mark.parametrize(
     ("message", "expected"),
     [
-        ("Connection timeout to payment-service after 30000ms",
-         "Connection timeout to payment-service after <*>"),
+        (
+            "Connection timeout to payment-service after 30000ms",
+            "Connection timeout to payment-service after <*>",
+        ),
         ("Request processed in ord_78642ms", "Request processed in <*>"),
-        ('Customer order failed {"order_id": "ord_1"}', 'Customer order failed {"order_id": "<*>"}'),
+        (
+            'Customer order failed {"order_id": "ord_1"}',
+            'Customer order failed {"order_id": "<*>"}',
+        ),
         ("Payment processed for amount $808.15", "Payment processed for amount <*>"),
         ("Deadlock detected", "Deadlock detected"),
     ],
@@ -68,8 +75,12 @@ class TestMetricExtractor:
 
     @pytest.mark.parametrize(
         "message",
-        ["Request processed in ord_78642ms", "Request took file_e54c7845.txtms to complete",
-         "Response time degraded to usr_3521ms", "Background job completed in 4521ms"],
+        [
+            "Request processed in ord_78642ms",
+            "Request took file_e54c7845.txtms to complete",
+            "Response time degraded to usr_3521ms",
+            "Background job completed in 4521ms",
+        ],
     )
     def test_garbled_or_irrelevant_values_are_ignored(
         self, make_event: EventFactory, message: str
@@ -82,24 +93,39 @@ class TestMetricExtractor:
         assert text.value == pytest.approx(0.95)
         assert (text.used, text.capacity) == (95, 100)
         (field,) = self.extractor.extract(
-            make_event("Connection pool status",
-                       fields={"active_connections": 50, "max_connections": 100})
+            make_event(
+                "Connection pool status", fields={"active_connections": 50, "max_connections": 100}
+            )
         )
         assert field.value == pytest.approx(0.5)
 
     @pytest.mark.parametrize(
         "fields",
-        [{"active_connections": 5, "max_connections": 0},
-         {"active_connections": 500, "max_connections": 100},
-         {"active_connections": "many", "max_connections": 100},
-         {"active_connections": -1, "max_connections": 100}],
+        [
+            {"active_connections": 5, "max_connections": 0},
+            {"active_connections": 500, "max_connections": 100},
+            {"active_connections": "many", "max_connections": 100},
+            {"active_connections": -1, "max_connections": 100},
+        ],
     )
-    def test_invalid_utilization_is_ignored(self, make_event: EventFactory, fields: dict[str, object]) -> None:
+    def test_invalid_utilization_is_ignored(
+        self, make_event: EventFactory, fields: dict[str, object]
+    ) -> None:
         assert self.extractor.extract(make_event("Connection pool status", fields=fields)) == []
 
     def test_min_level_is_respected(self, make_event: EventFactory) -> None:
-        config = build_config({"metrics": [{"name": "request_latency", "kind": "latency",
-                                            "regex": "in (?P<value>\\d+)ms", "min_level": "WARN"}]})
+        config = build_config(
+            {
+                "metrics": [
+                    {
+                        "name": "request_latency",
+                        "kind": "latency",
+                        "regex": "in (?P<value>\\d+)ms",
+                        "min_level": "WARN",
+                    }
+                ]
+            }
+        )
         extractor = MetricExtractor(config.metrics)
         assert extractor.extract(make_event("done in 5ms", level=Level.INFO)) == []
         assert len(extractor.extract(make_event("done in 5ms", level=Level.WARN))) == 1
@@ -116,7 +142,8 @@ class TestServiceDirectory:
         # longest alias wins: "payment provider" is not "payment" + "provider"
         assert d.mentions("Payment provider unavailable") == {"payment-provider"}
         assert d.mentions("Cannot process order: payment unavailable") == {
-            "order-service", "payment-service"
+            "order-service",
+            "payment-service",
         }
         assert d.mentions("user-servicems") == set()
         assert d.plausible("order-service", "database")
@@ -148,8 +175,9 @@ class TestPatternClassifier:
     def test_connection_timeout_captures_target_and_backdates_failure(
         self, classifier: PatternClassifier, make_event: EventFactory
     ) -> None:
-        signal = classifier.classify(make_event(
-            "Connection timeout to payment-service after 30000ms", service="api-gateway"))
+        signal = classifier.classify(
+            make_event("Connection timeout to payment-service after 30000ms", service="api-gateway")
+        )
         assert signal is not None
         assert signal.kind == "connection_timeout"
         assert signal.targets == {"payment-service"}
@@ -161,26 +189,37 @@ class TestPatternClassifier:
     def test_unknown_and_implausible_targets_are_dropped(
         self, classifier: PatternClassifier, make_event: EventFactory
     ) -> None:
-        garbage = classifier.classify(make_event(
-            "Connection timeout to file_007f1c1f.txt after user-servicems", service="api-gateway"))
+        garbage = classifier.classify(
+            make_event(
+                "Connection timeout to file_007f1c1f.txt after user-servicems",
+                service="api-gateway",
+            )
+        )
         assert garbage is not None
         assert garbage.targets == frozenset()
         assert garbage.effective_ts is None
-        wrong_way = classifier.classify(make_event(
-            "Failed to connect to api-gateway: timeout", service="order-service"))
+        wrong_way = classifier.classify(
+            make_event("Failed to connect to api-gateway: timeout", service="order-service")
+        )
         assert wrong_way is not None
         assert wrong_way.targets == frozenset()  # order-service does not call the gateway
 
     def test_static_rule_target_and_alias_mentions(
         self, classifier: PatternClassifier, make_event: EventFactory
     ) -> None:
-        pool = classifier.classify(make_event(
-            "Failed to acquire database connection: pool exhausted", service="order-service"))
+        pool = classifier.classify(
+            make_event(
+                "Failed to acquire database connection: pool exhausted", service="order-service"
+            )
+        )
         assert pool is not None
         assert pool.kind == "db_pool_exhausted"
         assert pool.targets == {"database"}
-        refused = classifier.classify(make_event(
-            "Payment provider unavailable: connection refused", service="payment-service"))
+        refused = classifier.classify(
+            make_event(
+                "Payment provider unavailable: connection refused", service="payment-service"
+            )
+        )
         assert refused is not None
         assert refused.targets == {"payment-provider"}
         own = classifier.classify(make_event("Connection pool exhausted", service="database"))
@@ -196,8 +235,9 @@ class TestPatternClassifier:
         assert slow.attributes["value"] == 1500
         assert classifier.classify(make_event("Query took 900ms", level=Level.INFO)) is None
         assert classifier.classify(make_event("Query took ord_1500ms", level=Level.INFO)) is None
-        structured = classifier.classify(make_event(
-            "Slow query detected", level=Level.WARN, fields={"execution_time_ms": 2500}))
+        structured = classifier.classify(
+            make_event("Slow query detected", level=Level.WARN, fields={"execution_time_ms": 2500})
+        )
         assert structured is not None
         assert structured.kind == "database_slow_query"
         cpu = classifier.classify(make_event("CPU usage at 95%", level=Level.WARN))
@@ -236,12 +276,22 @@ class TestPatternClassifier:
         assert classifier.classify(make_event("Request processed in 5ms", level=Level.INFO)) is None
 
     def test_service_restricted_rules_and_explicit_captures(self, make_event: EventFactory) -> None:
-        config = build_config({"patterns": [
-            {"name": "card", "regex": r"declined code=(\w+) amount=(\d+)",
-             "captures": ["code", "amount"], "group_by": ["service", "code"],
-             "services": ["billing"], "severity": "HIGH", "category": "dependency",
-             "target": "card-processor"},
-        ]})
+        config = build_config(
+            {
+                "patterns": [
+                    {
+                        "name": "card",
+                        "regex": r"declined code=(\w+) amount=(\d+)",
+                        "captures": ["code", "amount"],
+                        "group_by": ["service", "code"],
+                        "services": ["billing"],
+                        "severity": "HIGH",
+                        "category": "dependency",
+                        "target": "card-processor",
+                    },
+                ]
+            }
+        )
         classifier = PatternClassifier(config, ServiceDirectory(config))
         hit = classifier.classify(make_event("declined code=51 amount=20", service="billing"))
         assert hit is not None

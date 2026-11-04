@@ -17,17 +17,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from log_analyzer.config import load_config  # noqa: E402
-from log_analyzer.engine import Analyzer  # noqa: E402
-from log_analyzer.testdata.generator import GeneratorSettings, generate  # noqa: E402
+from log_analyzer.config import load_config
+from log_analyzer.engine import Analyzer
+from log_analyzer.testdata.generator import GeneratorSettings, generate
 
 EXPECTED = {
-    "pool exhaustion (CRITICAL, root database)": lambda a: a.severity.name == "CRITICAL"
-    and a.root_service == "database",
-    "payment cascade (CRITICAL, root payment-provider)": lambda a: a.severity.name == "CRITICAL"
-    and a.root_service == "payment-provider",
-    "perf degradation (MEDIUM, root database)": lambda a: a.category == "performance"
-    and a.root_service == "database",
+    "pool exhaustion (CRITICAL, root database)": lambda a: (
+        a.severity.name == "CRITICAL" and a.root_service == "database"
+    ),
+    "payment cascade (CRITICAL, root payment-provider)": lambda a: (
+        a.severity.name == "CRITICAL" and a.root_service == "payment-provider"
+    ),
+    "perf degradation (MEDIUM, root database)": lambda a: (
+        a.category == "performance" and a.root_service == "database"
+    ),
 }
 
 
@@ -54,8 +57,10 @@ def main() -> int:
         extra = len(result.alerts) - expected_like - noise_alerts
         missed += sum(1 for ok in found.values() if not ok)
         extra_total += max(0, extra)
-        status = "ok" if all(found.values()) else "MISSED " + ", ".join(
-            n for n, ok in found.items() if not ok
+        status = (
+            "ok"
+            if all(found.values())
+            else "MISSED " + ", ".join(n for n, ok in found.items() if not ok)
         )
         print(
             f"seed {seed:>3}: {len(result.alerts)} alerts ({noise_alerts} noise, {extra} other) "

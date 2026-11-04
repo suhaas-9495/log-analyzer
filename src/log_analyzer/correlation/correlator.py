@@ -446,11 +446,7 @@ class Correlator:
             return False
         # Metric detectors (latency trend, saturation) and the noise bucket alert on their
         # own; an error-rate spike adds evidence to an incident but never pages for it.
-        if (
-            assessment.cascade
-            or incident.unexplained
-            or self._metric_evidence(incident) != "none"
-        ):
+        if assessment.cascade or incident.unexplained or self._metric_evidence(incident) != "none":
             return True
         needed = incident.min_occurrences_override or self._config.thresholds.min_occurrences
         if len(incident.services) > 1:
@@ -559,4 +555,3 @@ class Correlator:
         day = format_date_compact(ts)
         self._sequence[day] = self._sequence.get(day, 0) + 1
         return f"ALR-{day}-{self._sequence[day]:03d}"
-

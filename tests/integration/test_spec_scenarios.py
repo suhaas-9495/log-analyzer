@@ -28,7 +28,11 @@ def test_scenario_1_cascade_yields_single_critical_alert_rooted_in_database(
     assert alert.root_service == "database"
     assert alert.confidence >= 0.9
     assert set(alert.affected_services) == {
-        "database", "payment-service", "api-gateway", "web-app", "order-service",
+        "database",
+        "payment-service",
+        "api-gateway",
+        "web-app",
+        "order-service",
     }
     assert alert.cascade
 
@@ -104,9 +108,21 @@ def test_scenario_4_high_volume_100k_lines(tmp_path: Path) -> None:
 
     started = time.perf_counter()
     completed = subprocess.run(
-        [sys.executable, "-m", "log_analyzer", "--file", str(log_file),
-         "--config", str(CONFIG_PATH), "--format", "json"],
-        capture_output=True, text=True, check=True, timeout=60,
+        [
+            sys.executable,
+            "-m",
+            "log_analyzer",
+            "--file",
+            str(log_file),
+            "--config",
+            str(CONFIG_PATH),
+            "--format",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
     )
     wall_seconds = time.perf_counter() - started
     report = json.loads(completed.stdout)

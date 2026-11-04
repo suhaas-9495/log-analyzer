@@ -22,14 +22,24 @@ FIXTURES = ROOT / "tests" / "fixtures"
 # A small topology used by unit tests that need service awareness.
 TOPOLOGY: dict[str, Any] = {
     "services": [
-        {"name": "api-gateway", "critical": True,
-         "dependencies": ["order-service", "payment-service", "inventory-service"]},
+        {
+            "name": "api-gateway",
+            "critical": True,
+            "dependencies": ["order-service", "payment-service", "inventory-service"],
+        },
         {"name": "web-app", "dependencies": ["api-gateway", "payment-service"]},
-        {"name": "order-service", "dependencies": ["database", "payment-service"],
-         "aliases": ["order"]},
-        {"name": "payment-service", "critical": True,
-         "dependencies": ["database", "payment-provider"], "aliases": ["payment"],
-         "expected_error_rate": 0.05},
+        {
+            "name": "order-service",
+            "dependencies": ["database", "payment-service"],
+            "aliases": ["order"],
+        },
+        {
+            "name": "payment-service",
+            "critical": True,
+            "dependencies": ["database", "payment-provider"],
+            "aliases": ["payment"],
+            "expected_error_rate": 0.05,
+        },
         {"name": "inventory-service", "dependencies": ["database"]},
         {"name": "payment-provider", "aliases": ["payment provider"]},
         {"name": "database", "critical": True, "aliases": ["db"]},
@@ -57,7 +67,9 @@ def large_sample(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return target / "large_test_logs.txt"
 
 
-def analyze(lines: Iterable[str], cfg: AnalyzerConfig, window: float | None = None) -> AnalysisResult:
+def analyze(
+    lines: Iterable[str], cfg: AnalyzerConfig, window: float | None = None
+) -> AnalysisResult:
     analyzer = Analyzer(cfg)
     for line in lines:
         analyzer.process_line(line)
@@ -79,9 +91,14 @@ def event(
     request_id: str | None = None,
 ) -> LogEvent:
     return LogEvent(
-        ts=ts, level=level, service=service, message=message,
-        raw=f"{level.name} [{service}] {message}", fmt="test",
-        request_id=request_id, fields=fields or {},
+        ts=ts,
+        level=level,
+        service=service,
+        message=message,
+        raw=f"{level.name} [{service}] {message}",
+        fmt="test",
+        request_id=request_id,
+        fields=fields or {},
     )
 
 

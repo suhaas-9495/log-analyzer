@@ -25,8 +25,13 @@ class PipeParser:
             return None
         ts, level, service, message = parts
         return LogEvent(
-            ts=float(ts), level=Level.parse(level), service=service, message=message,
-            raw=line, fmt=self.name, line_no=line_no,
+            ts=float(ts),
+            level=Level.parse(level),
+            service=service,
+            message=message,
+            raw=line,
+            fmt=self.name,
+            line_no=line_no,
         )
 
 
@@ -44,8 +49,14 @@ class KeywordDetector:
             return []
         return [
             Signal(
-                kind="canary", source=SignalSource.DETECTOR, ts=event.ts, service=event.service,
-                severity=Severity.HIGH, category=Category.AVAILABILITY,
-                fingerprint=("canary", event.service), template="canary failed", event=event,
+                kind="canary",
+                source=SignalSource.DETECTOR,
+                ts=event.ts,
+                service=event.service,
+                severity=Severity.HIGH,
+                category=Category.AVAILABILITY,
+                fingerprint=("canary", event.service),
+                template="canary failed",
+                event=event,
             )
         ]

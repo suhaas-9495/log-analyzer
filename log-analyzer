@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Convenience wrapper so the commands from the problem statement work from a checkout:
+#   ./log-analyzer --file application.log --config config.yaml
+#   tail -f /var/log/app/*.log | ./log-analyzer --config config.yaml
+# Uses the project's virtualenv when present (`make install`), else the system Python.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$HERE/.venv/bin/log-analyzer" ]]; then
+  exec "$HERE/.venv/bin/log-analyzer" "$@"
+fi
+PYTHONPATH="$HERE/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m log_analyzer "$@"

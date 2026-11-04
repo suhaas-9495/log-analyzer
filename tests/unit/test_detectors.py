@@ -44,8 +44,9 @@ def test_bounded_state_evicts_least_recently_used() -> None:
 
 # --------------------------------------------------------------------------- error rate
 class TestErrorRate:
-    config = build_config({"services": [{"name": "api", "critical": True,
-                                         "expected_error_rate": 0.1}]})
+    config = build_config(
+        {"services": [{"name": "api", "critical": True, "expected_error_rate": 0.1}]}
+    )
 
     def _traffic(self, start: float, seconds: int, per_second: int, error_every: int = 0) -> list:  # type: ignore[type-arg]
         events = []
@@ -54,9 +55,14 @@ class TestErrorRate:
             for i in range(per_second):
                 n += 1
                 is_error = error_every and n % error_every == 0
-                events.append(event("boom" if is_error else "ok", service="api",
-                                    level=Level.ERROR if is_error else Level.INFO,
-                                    ts=start + s + i / per_second))
+                events.append(
+                    event(
+                        "boom" if is_error else "ok",
+                        service="api",
+                        level=Level.ERROR if is_error else Level.INFO,
+                        ts=start + s + i / per_second,
+                    )
+                )
         return events
 
     def test_spike_over_learned_baseline(self) -> None:
@@ -116,8 +122,15 @@ class TestLatency:
     config = build_config()
 
     def _series(self, values: list[float], step: float = 1.0, service: str = "api") -> list:  # type: ignore[type-arg]
-        return [event(f"Request processed in {v:.0f}ms", service=service, level=Level.INFO,
-                      ts=T0 + i * step) for i, v in enumerate(values)]
+        return [
+            event(
+                f"Request processed in {v:.0f}ms",
+                service=service,
+                level=Level.INFO,
+                ts=T0 + i * step,
+            )
+            for i, v in enumerate(values)
+        ]
 
     def test_spec_scenario_2_sparse_monotonic_series(self) -> None:
         detector = LatencyDetector(self.config)
@@ -166,8 +179,15 @@ class TestSaturation:
     config = build_config()
 
     def _pool(self, used: list[int]) -> list:  # type: ignore[type-arg]
-        return [event(f"Connection pool: {u}/100 active", service="database", level=Level.INFO,
-                      ts=T0 + i * 6) for i, u in enumerate(used)]
+        return [
+            event(
+                f"Connection pool: {u}/100 active",
+                service="database",
+                level=Level.INFO,
+                ts=T0 + i * 6,
+            )
+            for i, u in enumerate(used)
+        ]
 
     def test_early_warning_with_eta_then_critical_then_exhausted(self) -> None:
         detector = SaturationDetector(self.config)
