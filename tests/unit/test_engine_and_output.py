@@ -163,3 +163,34 @@ def test_use_color(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     assert not use_color("never", Tty())  # type: ignore[arg-type]
     monkeypatch.setenv("NO_COLOR", "1")
     assert not use_color("auto", Tty())  # type: ignore[arg-type]
+
+
+def test_silent_dependency_blamed_for_slowness_is_called_slow_not_down() -> None:
+    # Only callers report the database, and only as slow: the alert must not say "down".
+    lines = [
+        f"2024-01-10 10:00:0{i} INFO [reports] Query took {1500 + 300 * i}ms" for i in range(3)
+    ]
+    (alert,) = analyze(lines, build_config({})).alerts
+    view = alert.to_dict()
+    assert view["root_cause_analysis"]["probable_cause"] == (
+        "Slow database queries (inferred from slow calls reported by reports)"
+    )
+    assert "Unreachable" not in view["title"]
+    assert "unavailable" not in view["summary"]
+    assert any(
+        "reported slow calls to database" in e for e in view["root_cause_analysis"]["evidence"]
+    )
+
+
+def test_silent_dependency_blamed_for_failures_is_called_unreachable() -> None:
+    lines = [
+        f"2024-01-10 10:00:0{i} ERROR [payment-service] Connection timeout to payment-provider"
+        for i in range(3)
+    ]
+    (alert,) = analyze(lines, build_config(TOPOLOGY)).alerts
+    view = alert.to_dict()
+    assert view["title"].endswith("Payment Provider Unreachable")
+    assert view["root_cause_analysis"]["probable_cause"].startswith("payment-provider unavailable")
+    assert any(
+        "failed calling payment-provider" in e for e in view["root_cause_analysis"]["evidence"]
+    )

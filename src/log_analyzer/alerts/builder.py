@@ -186,7 +186,11 @@ class AlertBuilder:
             via = blaming_signal(incident, root.service)
             cause = title_case(via.title) if via and via.title else "Failures"
             who = humanize(caller) if len(callers) == 1 else f"{len(callers)} Services"
-            return f"{cause} in {who} - {svc} Unreachable"
+            if not blamed_only_for_slowness(incident, root.service):
+                return f"{cause} in {who} - {svc} Unreachable"
+            if svc.lower() in cause.lower():
+                return f"{cause} in {who}"
+            return f"{cause} in {who} - {svc} Slow"
         cause = title_case(primary.title) if primary and primary.title else "Errors"
         if category == "cascade":
             lead = cause if svc.lower() in cause.lower() else f"{svc} {cause}"
@@ -246,10 +250,14 @@ class AlertBuilder:
 
     def _probable_cause(self, root: RootCause, primary: Signal | None, incident: Incident) -> str:
         if root.inferred:
-            callers = sorted({src for src, dst in incident.edges if dst == root.service})
-            return (
-                f"{root.service} unavailable (inferred from failing calls by {', '.join(callers)})"
-            )
+            callers = ", ".join(sorted({src for src, dst in incident.edges if dst == root.service}))
+            if blamed_only_for_slowness(incident, root.service):
+                via = blaming_signal(incident, root.service)
+                cause = via.probable_cause if via and via.probable_cause else "Slow responses"
+                if root.service.replace("-", " ").lower() not in cause.lower():
+                    cause = f"{cause} on {root.service}"
+                return f"{cause} (inferred from slow calls reported by {callers})"
+            return f"{root.service} unavailable (inferred from failing calls by {callers})"
         if incident.unexplained:
             return "No common root cause: heterogeneous errors across unrelated services"
         if primary is None:
@@ -363,8 +371,13 @@ class AlertBuilder:
             blamed_at = [s.ts for s in incident.first_signals.values() if root in s.targets]
             window = f" from {format_clock(min(blamed_at))}" if blamed_at else ""
             listed = ", ".join(f"{svc} ({count})" for svc, count in callers[:5])
+            verb = (
+                "reported slow calls to"
+                if blamed_only_for_slowness(incident, root)
+                else "failed calling"
+            )
             lines.append(
-                f"{len(callers)} service{'s' if len(callers) != 1 else ''} failed calling "
+                f"{len(callers)} service{'s' if len(callers) != 1 else ''} {verb} "
                 f"{root}{window}: {listed}"
             )
         for src, targets, count in _second_level(incident, root)[:2]:
@@ -511,6 +524,16 @@ def blaming_signal(incident: Incident, dependency: str) -> Signal | None:
     """The most severe signal in which another service names ``dependency`` as failing."""
     blaming = [s for s in incident.first_signals.values() if dependency in s.targets]
     return max(blaming, key=lambda s: (s.severity, -s.ts)) if blaming else None
+
+
+def blamed_only_for_slowness(incident: Incident, dependency: str) -> bool:
+    """True when every signal naming ``dependency`` reports it slow, none reports it failing.
+
+    "Query took 2100ms" implicates the database, but as slow rather than down, so alert
+    text must not call it unavailable.
+    """
+    blaming = [s for s in incident.first_signals.values() if dependency in s.targets]
+    return bool(blaming) and all(s.category is Category.PERFORMANCE for s in blaming)
 
 
 def _preview(message: str) -> str:
