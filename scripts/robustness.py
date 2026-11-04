@@ -52,9 +52,10 @@ def main() -> int:
         result = analyzer.result()
         elapsed = time.perf_counter() - started
         found = {name: any(check(a) for a in result.alerts) for name, check in EXPECTED.items()}
-        expected_like = sum(1 for a in result.alerts if any(c(a) for c in EXPECTED.values()))
+        # Strict: each injected incident may account for one alert; a second alert for the
+        # same incident pages the on-call again, so it counts as extra.
         noise_alerts = sum(1 for a in result.alerts if a.category in ("error_rate", "errors"))
-        extra = len(result.alerts) - expected_like - noise_alerts
+        extra = len(result.alerts) - sum(found.values()) - noise_alerts
         missed += sum(1 for ok in found.values() if not ok)
         extra_total += max(0, extra)
         status = (

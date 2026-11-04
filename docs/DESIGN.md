@@ -329,6 +329,7 @@ score ×= 0.5   if the candidate itself depends on another failing node
 - Confidence is the winning score.
 - It is reduced by 20% when the runner-up is within 0.1 (ambiguous).
 - It is capped at 0.98: this is inference from logs, not proof.
+- It is a ranking score, not a calibrated probability: "0.98" means "clearly the best-supported candidate", not "right 98% of the time". Calibrating it would need labelled incidents (the on-call feedback loop in §12).
 - Single-service incidents get 0.6 + 0.3 × intrinsic.
 
 **Symptoms** are ordered by hop distance from the root, which produces the dashboard's
@@ -443,12 +444,26 @@ correct roots. See [ANALYSIS.md](ANALYSIS.md).
 |---|---|
 | Injected incidents detected with the correct root (pool exhaustion → database, payment outage → payment-provider, slowdown → database) | **36 / 36** |
 | Noise reduction | 99.5–99.8% |
-| Extra alerts | 7 in total (about 0.6 per dataset) |
+| Extra alerts, counted strictly | 16 in total (about 1.3 per dataset, out of 64 alerts) |
 
-The extra alerts appear in the first seconds of a noise band. They are random
-combinations that are individually plausible, for example "notification-service memory at
-95%" plus a gateway timing out on notification-service. They are reported honestly rather
-than tuned away.
+"Strictly" means every alert that is neither one of the three injected incidents nor the
+background-noise alert counts as extra, including a second alert for an incident that was
+already found.
+
+The extra alerts are random combinations that are individually plausible. The most common
+is one service logging "connection pool exhausted" or "deadlock" three times within a
+minute: that meets the alerting bar (`min_occurrences: 3`) and implicates the database,
+which logged nothing itself, so the database is inferred as the root (§5.5). Others appear
+in the first seconds of a noise band, for example "notification-service memory at 95%" plus
+a gateway timing out on notification-service. They are reported honestly rather than tuned
+away; requiring two independent callers before inferring a silent root, or a per-pattern
+`min_occurrences`, would cut them at the cost of reacting later to a real single-caller
+failure.
+
+An earlier version of the sweep under-counted these: alerts with an inferred root were
+classified as `errors` and mistaken for background noise, which made the figure look like
+0.6 per dataset. They are now classified by what their callers report (`resource`,
+`performance`, `dependency`).
 
 ## 10. Trade-offs and alternatives
 

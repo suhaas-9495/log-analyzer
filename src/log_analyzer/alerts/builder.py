@@ -140,7 +140,7 @@ class AlertBuilder:
 
     # ------------------------------------------------------------------ classification
     def category(self, incident: Incident, root: RootCause, cascade: bool) -> str:
-        return self._category(incident, primary_signal(incident, root.service), cascade)
+        return self._category(incident, root, primary_signal(incident, root.service), cascade)
 
     def describe(
         self,
@@ -151,7 +151,7 @@ class AlertBuilder:
     ) -> tuple[str, str]:
         """Return ``(category, title)`` for an incident."""
         primary = primary_signal(incident, root.service)
-        category = self._category(incident, primary, cascade)
+        category = self._category(incident, root, primary, cascade)
         if matched and not incident.unexplained:
             # A rule names the alert only when it is what set the alert's severity.
             top = max(rule.severity for rule in matched)
@@ -161,14 +161,20 @@ class AlertBuilder:
         return category, self._title(incident, root, primary, category)
 
     @staticmethod
-    def _category(incident: Incident, primary: Signal | None, cascade: bool) -> str:
+    def _category(
+        incident: Incident, root: RootCause, primary: Signal | None, cascade: bool
+    ) -> str:
         if cascade:
             return "cascade"
         if incident.unexplained or set(incident.kinds) <= {"error_rate_spike", "error"}:
             return "error_rate" if "error_rate_spike" in incident.kinds else "errors"
         if all(s.category is Category.PERFORMANCE for s in incident.first_signals.values()):
             return "performance"
-        return primary.category.value if primary else "errors"
+        if primary is not None:
+            return primary.category.value
+        # An inferred root has no signals of its own: classify by what its callers report.
+        blamed = blame_category(incident, root.service)
+        return blamed.value if blamed is not None else "errors"
 
     def _title(
         self, incident: Incident, root: RootCause, primary: Signal | None, category: str

@@ -48,7 +48,7 @@ Deeper documents:
 ```bash
 make install        # creates .venv and installs the package with dev tools
 make run            # analyze data/sample/test_logs.txt -> console dashboard
-make check          # lint + strict type check + 274 tests (coverage >= 85% enforced)
+make check          # lint + strict type check + 275 tests (coverage >= 85% enforced)
 make demo           # scripted walkthrough: the 4 spec scenarios, streaming, JSON, API
 ```
 
@@ -271,7 +271,7 @@ Scaling to millions of lines per minute is covered in
 
 ## Testing
 
-`make test` runs 274 tests with branch coverage (currently about 96%; the build fails
+`make test` runs 275 tests with branch coverage (currently about 96%; the build fails
 below 85%). `make check` adds `ruff` lint/format and `mypy --strict`.
 
 - **The four spec scenarios** use the spec's exact log lines ([`tests/integration/test_spec_scenarios.py`](tests/integration/test_spec_scenarios.py)):
@@ -366,6 +366,6 @@ tests/                   unit/, integration/, fixtures/ (the spec's scenario log
 - In production this graph should come from tracing or a service mesh (see DESIGN.md).
 
 **Known limitations**
-- The first seconds of a band of random errors can look like a small real incident before the noise is recognised. About 0.6 extra alerts per generated dataset; see DESIGN.md › Validation.
+- Random data produces about 1.3 extra alerts per generated dataset (16 over 12 datasets, counted strictly), for example one service logging "pool exhausted" three times in a minute. Every injected incident is still found with the right root; see DESIGN.md › Validation.
 - Error rates are per log line, not per request (logs carry no total request count).
 - The analyzer is single-process. The scale-out design is in DESIGN.md.
