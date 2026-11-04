@@ -1,0 +1,65 @@
+═══════════════════════════════════════════════════════════════════════════════
+LOG ANALYSIS DASHBOARD
+═══════════════════════════════════════════════════════════════════════════════
+Time Window: 2025-10-07 14:08:01 - 20:30:24 (6h 22m)
+───────────────────────────────────────────────────────────────────────────────
+Logs Processed:         99,998
+Errors Detected:        3,251
+Alerts Generated:       5
+Noise Reduction:        99.8%
+Ignored (filters):      2,793
+
+ALERTS (1 active):
+
+[CRITICAL] Database Connection Crisis  (ALR-20251007-003)
+ • Started: 17:05:33 (3h 24m ago), resolved after 19m 29s
+ • Services: database -> payment-service, inventory-service, user-service, order-service, api-gateway
+ • Root Cause: Database connection pool exhausted (98% confidence)
+ • Action: Page the database on-call; check pool size, max_connections and long-running queries
+
+[CRITICAL] Payment Provider Health Checks Failing - Cascading Failure Across 5 Services  (ALR-20251007-004)
+ • Started: 17:39:46 (2h 50m ago), resolved after 39s
+ • Services: payment-provider -> payment-service, order-service, api-gateway, web-app
+ • Root Cause: Health checks failing - service down or unreachable (payment-provider) (98% confidence)
+ • Action: Check the service's process, dependencies and recent deployments
+
+[MEDIUM] Performance Degradation: Rising Database Query Time Affecting 3 Dependent Services  (ALR-20251007-001)
+ • Started: 14:36:16 (5h 54m ago), resolved after 1m 12s
+ • Latency: 204ms, p95 209ms (baseline: 76ms, 2.68x)
+ • Trend: crosses 1000ms in ~2m 05s at current rate
+ • Services: database -> order-service, search-service, api-gateway
+ • Action: Check recent deployments and traffic changes for the slow component
+
+[MEDIUM] Elevated Error Rate Across 10 Services  (ALR-20251007-002)
+ • Started: 14:55:01 (5h 35m ago), resolved after 2h 08m
+ • Error Rates: notification-service 100%, search-service 100%, payment-service 100%, user-service 100%
+ • Top Pattern: Upstream service <*> not responding (x139)
+ • Root Cause: none identified - 177 distinct errors across 10 services, no shared failing dependency
+ • Action: Check for a recent deployment or config change affecting many services
+
+[MEDIUM] Elevated Error Rate Across 10 Services  (ALR-20251007-005)
+ • Started: 18:13:19 (2h 17m ago)
+ • Error Rates: inventory-service 100%, search-service 100%, api-gateway 100%, payment-service 100%
+ • Top Pattern: Upstream service <*> not responding (x150)
+ • Root Cause: none identified - 175 distinct errors across 10 services, no shared failing dependency
+ • Action: Check for a recent deployment or config change affecting many services
+
+TREND ANALYSIS:
+───────────────────────────────────────────────────────────────────────────────
+Service                  |  Errors | Error rate | Trend      | Status
+───────────────────────────────────────────────────────────────────────────────
+api-gateway              |     360 |      5.16% | ↑ 5,056%   | CRITICAL
+user-service             |     341 |      4.79% | ↑ 4,688%   | CRITICAL
+search-service           |     340 |      4.85% | ↑ 871%     | WARNING
+order-service            |     326 |      4.70% | ↑ 4,602%   | CRITICAL
+inventory-service        |     323 |      4.63% | ↑ 4,533%   | CRITICAL
+analytics-service        |     317 |      4.56% | ↑ 356%     | WARNING
+payment-service          |     317 |      4.55% | ↑ 9,001%   | CRITICAL
+recommendation-service   |     311 |      4.46% | ↑ 346%     | WARNING
+auth-service             |     307 |      4.41% | ↑ 4,312%   | WARNING
+notification-service     |     287 |      4.12% | ↑ 312%     | WARNING
+web-app                  |      20 |      0.07% | ↓ 85%      | CRITICAL
+database                 |       1 |      2.17% | ↑ 21,639%  | CRITICAL
+payment-provider         |       1 |    100.00% | ↑ 19,900%  | CRITICAL
+───────────────────────────────────────────────────────────────────────────────
+Processed 99,998 lines in 2.78s (36,033 lines/s), peak memory 27.1 MB

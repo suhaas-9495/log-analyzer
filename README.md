@@ -73,8 +73,14 @@ docker build --target test .                                     # full test sui
 | Elevated Error Rate Across 10 Services (×2) | MEDIUM | none (0.25) | Two bands of random, heterogeneous errors with no shared failing dependency, reported as background noise instead of as 100+ separate pages. |
 
 The 100k-line sample produces the same five incidents (99.8% noise reduction). The
-alert-by-alert reasoning is in [docs/ANALYSIS.md](docs/ANALYSIS.md). `make report` writes
-the dashboards and JSON reports to `reports/`.
+alert-by-alert reasoning is in [docs/ANALYSIS.md](docs/ANALYSIS.md).
+
+Real outputs are committed in [`docs/examples/`](docs/examples):
+- [the 10k dashboard](docs/examples/sample_10k_dashboard.txt)
+- [the 10k JSON report](docs/examples/sample_10k_report.json)
+- [the 100k dashboard](docs/examples/sample_100k_dashboard.txt)
+
+`make report` regenerates them in `reports/`.
 
 ## Usage
 
@@ -301,7 +307,7 @@ src/log_analyzer/
   testdata/generator.py  deterministic multi-format log generator with injected incidents
 configs/                 config.yaml, spec-example.yaml, examples/
 data/sample/             the provided sample logs (100k zipped; `make data` unpacks)
-docs/                    DESIGN.md, ANALYSIS.md
+docs/                    DESIGN.md, ANALYSIS.md, examples/ (real outputs on the samples)
 scripts/                 demo.sh, benchmark.py, robustness.py
 tests/                   unit/, integration/, fixtures/ (the spec's scenario logs)
 ```

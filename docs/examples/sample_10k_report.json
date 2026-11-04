@@ -1,0 +1,569 @@
+{
+  "analysis_period": {
+    "start": "2025-10-07T14:03:49Z",
+    "end": "2025-10-07T15:00:34Z"
+  },
+  "statistics": {
+    "total_logs": 9998,
+    "errors_found": 447,
+    "alerts_generated": 5,
+    "noise_reduction_percent": 98.9,
+    "warnings_found": 413,
+    "logs_parsed": 9998,
+    "logs_analyzed": 9725,
+    "logs_ignored": 273,
+    "ignored_by_reason": {
+      "below_min_level": 273
+    },
+    "unparsed_lines": 0,
+    "continuation_lines": 0,
+    "formats": {
+      "text": 4436,
+      "app": 2661,
+      "json": 2901
+    },
+    "active_alerts": 1,
+    "incidents": {
+      "incidents_opened": 416,
+      "incidents_merged": 2,
+      "incidents_suppressed": 66,
+      "incidents_inhibited": 324,
+      "suppressed_logs": 73,
+      "reopened": 0,
+      "alerts_evicted": 0
+    }
+  },
+  "alerts": [
+    {
+      "alert_id": "ALR-20251007-003",
+      "severity": "CRITICAL",
+      "title": "Database Connection Crisis",
+      "summary": "database: Database connection pool exhausted, causing cascading failures in 5 dependent services: order-service, inventory-service, payment-service, user-service, api-gateway.",
+      "timeline": {
+        "first_occurrence": "2025-10-07T14:24:31Z",
+        "last_occurrence": "2025-10-07T14:42:28Z",
+        "total_duration_seconds": 1077
+      },
+      "impact": {
+        "affected_services": [
+          "database",
+          "order-service",
+          "api-gateway",
+          "inventory-service",
+          "payment-service",
+          "user-service"
+        ],
+        "error_count": 85,
+        "unique_errors": 7,
+        "estimated_failed_requests": 85
+      },
+      "root_cause_analysis": {
+        "probable_cause": "Database connection pool exhausted",
+        "confidence": 0.98,
+        "evidence": [
+          "database reported 'Connection pool exhausted' at 14:25:12",
+          "database connection pool utilization rose from 50% to 100% between 14:23:00 and 14:25:12",
+          "Early warning at 14:24:31: 80% and rising, projected exhaustion in ~1m 00s",
+          "4 services failed calling database from 14:25:12: inventory-service (18), user-service (17), order-service (9), payment-service (6)",
+          "api-gateway failing on inventory-service, order-service, payment-service, user-service (34 errors)",
+          "6 services began failing in a chain (each within 30s of the previous failure; first-to-last 163s)"
+        ]
+      },
+      "suggested_actions": [
+        "1. Page the database on-call; check pool size, max_connections and long-running queries",
+        "2. Increase the database connection pool size (and the DB's max_connections)",
+        "3. Check for connection leaks: connections not returned to the pool",
+        "4. Find long-running queries or transactions holding connections",
+        "5. Review recent deployments for connection handling changes"
+      ],
+      "sample_logs": [
+        "{\"timestamp\": \"2025-10-07T14:25:01.774450Z\", \"level\": \"WARN\", \"service\": \"database\", \"message\": \"Connection pool nearly exhausted\", \"active_connections\": 90, \"max_connections\": 100, \"waiting_threads\": 0}",
+        "{\"timestamp\": \"2025-10-07T14:25:12.128450Z\", \"level\": \"ERROR\", \"service\": \"database\", \"message\": \"Connection pool exhausted\", \"active_connections\": 100, \"max_connections\": 100, \"waiting_threads\": 15, \"rejected_connections\": 1}",
+        "2025-10-07 14:25:12.576 ERROR [order-service] RequestID:req-31591198b142 Failed to acquire database connection: pool exhausted",
+        "2025-10-07 14:25:42.634 ERROR [api-gateway] RequestID:req-364d7abcbef9 Connection timeout to order-service after 30000ms",
+        "2025-10-07 14:25:42.749 ERROR [inventory-service] RequestID:req-031379c2ae95 Failed to acquire database connection: pool exhausted"
+      ],
+      "deduplication_stats": {
+        "total_logs_analyzed": 90,
+        "logs_grouped": 83,
+        "noise_reduction_percent": 92.2
+      },
+      "status": "resolved",
+      "category": "cascade",
+      "root_cause_service": "database",
+      "symptom_services": [
+        "order-service",
+        "inventory-service",
+        "payment-service",
+        "user-service",
+        "api-gateway"
+      ],
+      "cascading_failure": true,
+      "matched_rules": [
+        "Database Connection Crisis"
+      ],
+      "auto_escalate": true,
+      "detected_at": "2025-10-07T14:24:31Z",
+      "resolved_at": "2025-10-07T14:43:28Z",
+      "severity_history": [
+        {
+          "at": "2025-10-07T14:24:31Z",
+          "severity": "MEDIUM"
+        },
+        {
+          "at": "2025-10-07T14:25:08Z",
+          "severity": "HIGH"
+        },
+        {
+          "at": "2025-10-07T14:25:42Z",
+          "severity": "CRITICAL"
+        }
+      ]
+    },
+    {
+      "alert_id": "ALR-20251007-004",
+      "severity": "CRITICAL",
+      "title": "Payment Provider Health Checks Failing - Cascading Failure Across 5 Services",
+      "summary": "payment-provider: Health checks failing - service down or unreachable, causing cascading failures in 4 dependent services: payment-service, order-service, api-gateway, web-app.",
+      "timeline": {
+        "first_occurrence": "2025-10-07T14:44:50Z",
+        "last_occurrence": "2025-10-07T14:45:29Z",
+        "total_duration_seconds": 38
+      },
+      "impact": {
+        "affected_services": [
+          "payment-provider",
+          "payment-service",
+          "order-service",
+          "api-gateway",
+          "web-app"
+        ],
+        "error_count": 61,
+        "unique_errors": 6,
+        "estimated_failed_requests": 46
+      },
+      "root_cause_analysis": {
+        "probable_cause": "Health checks failing - service down or unreachable (payment-provider)",
+        "confidence": 0.98,
+        "evidence": [
+          "payment-provider reported 'Service health check failed: Connection refused' at 14:44:50",
+          "1 service failed calling payment-provider from 14:44:52: payment-service (40)",
+          "web-app failing on order-service, payment-service (40 errors)",
+          "order-service failing on payment-service (15 errors)",
+          "5 services began failing in a chain (each within 30s of the previous failure; first-to-last 31s)",
+          "order-service error rate 10.91% (baseline 5.882%)"
+        ]
+      },
+      "suggested_actions": [
+        "1. Check the service's process, dependencies and recent deployments",
+        "2. Restart or fail over unhealthy instances",
+        "3. Fix the root-cause service first; dependents should recover on their own",
+        "4. Shed load / open circuit breakers on dependents to stop retry amplification"
+      ],
+      "sample_logs": [
+        "2025-10-07 14:44:50.890 ERROR [payment-provider] Service health check failed: Connection refused",
+        "2025-10-07 14:44:52.457 ERROR [payment-service] RequestID:req-c89ff1d60681 Payment provider unavailable: connection refused",
+        "2025-10-07 14:44:52.570 WARN  [payment-service] RequestID:req-e5d271e889bc Retry attempt 1/3 for payment provider",
+        "2025-10-07 14:45:10.939 ERROR [order-service] RequestID:req-d55d7c66e0b1 Cannot process order: payment service unavailable",
+        "2025-10-07 14:45:11.028 ERROR [api-gateway] RequestID:req-d55d7c66e0b1 Order processing failed: downstream service error"
+      ],
+      "deduplication_stats": {
+        "total_logs_analyzed": 91,
+        "logs_grouped": 85,
+        "noise_reduction_percent": 93.4
+      },
+      "status": "resolved",
+      "category": "cascade",
+      "root_cause_service": "payment-provider",
+      "symptom_services": [
+        "payment-service",
+        "order-service",
+        "api-gateway",
+        "web-app"
+      ],
+      "cascading_failure": true,
+      "matched_rules": [],
+      "auto_escalate": false,
+      "detected_at": "2025-10-07T14:44:52Z",
+      "resolved_at": "2025-10-07T14:46:29Z",
+      "severity_history": [
+        {
+          "at": "2025-10-07T14:44:52Z",
+          "severity": "HIGH"
+        },
+        {
+          "at": "2025-10-07T14:45:10Z",
+          "severity": "CRITICAL"
+        }
+      ]
+    },
+    {
+      "alert_id": "ALR-20251007-001",
+      "severity": "MEDIUM",
+      "title": "Performance Degradation: Rising Database Query Time Affecting 3 Dependent Services",
+      "summary": "Database query time rose to 172ms (2.39x the 72ms baseline) and is still trending up; dependents also slowing: order-service, search-service, api-gateway. At this rate it crosses 1000ms in about 2m 56s.",
+      "timeline": {
+        "first_occurrence": "2025-10-07T14:07:09Z",
+        "last_occurrence": "2025-10-07T14:07:33Z",
+        "total_duration_seconds": 23
+      },
+      "impact": {
+        "affected_services": [
+          "database",
+          "order-service",
+          "api-gateway",
+          "search-service"
+        ],
+        "error_count": 0,
+        "unique_errors": 2,
+        "estimated_failed_requests": 0
+      },
+      "root_cause_analysis": {
+        "probable_cause": "Database query time rising: 172ms vs 72ms baseline (2.4x)",
+        "confidence": 0.91,
+        "evidence": [
+          "Database query time 172ms vs 72ms baseline (2.39x, rising: Kendall tau 0.63 over 14 samples)",
+          "order-service request latency 388ms vs 142ms baseline (2.73x, rising: Kendall tau 0.77 over 20 samples)",
+          "api-gateway request latency 388ms vs 178ms baseline (2.18x, rising: Kendall tau 0.67 over 20 samples)"
+        ]
+      },
+      "suggested_actions": [
+        "1. Check recent deployments and traffic changes for the slow component",
+        "2. Inspect slow-query logs / query plans and dependency latency",
+        "3. Scale out or shed load before latency reaches the timeout threshold"
+      ],
+      "sample_logs": [
+        "{\"timestamp\": \"2025-10-07T14:07:11.561450Z\", \"level\": \"WARN\", \"service\": \"database\", \"message\": \"Slow query detected\", \"query\": \"SELECT * FROM orders WHERE ...\", \"execution_time_ms\": 172, \"rows_examined\": 32223}",
+        "2025-10-07 14:07:27.447 WARN  [order-service] RequestID:req-6c8df90f2f2a Request processed in 403ms",
+        "2025-10-07 14:07:28.308 WARN  [api-gateway] RequestID:req-1e4d3f327a34 Request processed in 412ms",
+        "2025-10-07 14:07:30.478 WARN  [search-service] RequestID:req-d1166eb7e69d Request processed in 441ms"
+      ],
+      "deduplication_stats": {
+        "total_logs_analyzed": 19,
+        "logs_grouped": 17,
+        "noise_reduction_percent": 89.5
+      },
+      "status": "resolved",
+      "category": "performance",
+      "root_cause_service": "database",
+      "symptom_services": [
+        "order-service",
+        "search-service",
+        "api-gateway"
+      ],
+      "cascading_failure": false,
+      "matched_rules": [],
+      "auto_escalate": false,
+      "detected_at": "2025-10-07T14:07:09Z",
+      "resolved_at": "2025-10-07T14:08:33Z",
+      "severity_history": [
+        {
+          "at": "2025-10-07T14:07:09Z",
+          "severity": "MEDIUM"
+        }
+      ]
+    },
+    {
+      "alert_id": "ALR-20251007-002",
+      "severity": "MEDIUM",
+      "title": "Elevated Error Rate Across 10 Services",
+      "summary": "10 services show elevated error rates with 62 distinct error signatures and no shared failing dependency; likely background noise or a broad change (deploy/config).",
+      "timeline": {
+        "first_occurrence": "2025-10-07T14:10:01Z",
+        "last_occurrence": "2025-10-07T14:22:51Z",
+        "total_duration_seconds": 770
+      },
+      "impact": {
+        "affected_services": [
+          "api-gateway",
+          "payment-service",
+          "auth-service",
+          "notification-service",
+          "search-service",
+          "user-service",
+          "inventory-service",
+          "order-service",
+          "recommendation-service",
+          "analytics-service"
+        ],
+        "error_count": 117,
+        "unique_errors": 62,
+        "estimated_failed_requests": 117
+      },
+      "root_cause_analysis": {
+        "probable_cause": "No common root cause: heterogeneous errors across unrelated services",
+        "confidence": 0.25,
+        "evidence": [
+          "62 distinct error signatures across 10 services; no failing dependency shared between them",
+          "'Failed to connect to <*> timeout' x16",
+          "'Invalid request format' x14",
+          "'Connection pool exhausted' x14",
+          "user-service error rate 100% (baseline 1.439%)",
+          "api-gateway error rate 75% (baseline 0.1%)"
+        ]
+      },
+      "suggested_actions": [
+        "1. Check for a recent deployment or config change affecting many services",
+        "2. Inspect the top error signatures; fix or silence known-noisy ones",
+        "3. Watch for any one service or dependency standing out (it would page separately)"
+      ],
+      "sample_logs": [
+        "2025-10-07 14:12:22.038 ERROR [api-gateway] Invalid request format",
+        "{\"timestamp\": \"2025-10-07T14:12:45.520450Z\", \"level\": \"ERROR\", \"service\": \"api-gateway\", \"message\": \"Request took resource_72ms to complete\"}",
+        "2025-10-07 14:13:52.072 WARN  [api-gateway] High memory usage detected: analytics-service%",
+        "2025-10-07 14:11:11.498 ERROR [auth-service] resource_1 connection attempt timed out",
+        "2025-10-07 14:11:41.628 WARN  [auth-service] Response time degraded to resource_3ms"
+      ],
+      "deduplication_stats": {
+        "total_logs_analyzed": 235,
+        "logs_grouped": 173,
+        "noise_reduction_percent": 73.6
+      },
+      "status": "resolved",
+      "category": "error_rate",
+      "root_cause_service": "api-gateway",
+      "symptom_services": [
+        "payment-service",
+        "user-service",
+        "auth-service",
+        "notification-service",
+        "search-service",
+        "inventory-service",
+        "order-service",
+        "analytics-service",
+        "recommendation-service"
+      ],
+      "cascading_failure": false,
+      "matched_rules": [],
+      "auto_escalate": false,
+      "detected_at": "2025-10-07T14:10:01Z",
+      "resolved_at": "2025-10-07T14:37:51Z",
+      "severity_history": [
+        {
+          "at": "2025-10-07T14:10:01Z",
+          "severity": "MEDIUM"
+        }
+      ]
+    },
+    {
+      "alert_id": "ALR-20251007-005",
+      "severity": "MEDIUM",
+      "title": "Elevated Error Rate Across 10 Services",
+      "summary": "10 services show elevated error rates with 49 distinct error signatures and no shared failing dependency; likely background noise or a broad change (deploy/config).",
+      "timeline": {
+        "first_occurrence": "2025-10-07T14:48:32Z",
+        "last_occurrence": "2025-10-07T14:59:38Z",
+        "total_duration_seconds": 666
+      },
+      "impact": {
+        "affected_services": [
+          "analytics-service",
+          "user-service",
+          "recommendation-service",
+          "api-gateway",
+          "payment-service",
+          "notification-service",
+          "auth-service",
+          "search-service",
+          "inventory-service",
+          "order-service"
+        ],
+        "error_count": 137,
+        "unique_errors": 49,
+        "estimated_failed_requests": 137
+      },
+      "root_cause_analysis": {
+        "probable_cause": "No common root cause: heterogeneous errors across unrelated services",
+        "confidence": 0.25,
+        "evidence": [
+          "49 distinct error signatures across 10 services; no failing dependency shared between them",
+          "'Upstream service <*> not responding' x16",
+          "'Request took <*> to complete' x15",
+          "'Deadlock detected' x15",
+          "api-gateway error rate 100% (baseline 2%)",
+          "search-service error rate 100% (baseline 0.5%)"
+        ]
+      },
+      "suggested_actions": [
+        "1. Check for a recent deployment or config change affecting many services",
+        "2. Inspect the top error signatures; fix or silence known-noisy ones",
+        "3. Watch for any one service or dependency standing out (it would page separately)"
+      ],
+      "sample_logs": [
+        "2025-10-07 14:49:13.191 ERROR [analytics-service] Database connection failed: resource_48",
+        "2025-10-07 14:49:15.285 WARN  [analytics-service] Connection pool exhausted",
+        "2025-10-07 14:48:32.485 WARN  [user-service] Invalid request format",
+        "{\"timestamp\": \"2025-10-07T14:48:33.549450Z\", \"level\": \"ERROR\", \"service\": \"recommendation-service\", \"message\": \"Invalid request format\"}",
+        "2025-10-07 14:48:34.701 WARN  [api-gateway] Query timeout after 90ms"
+      ],
+      "deduplication_stats": {
+        "total_logs_analyzed": 255,
+        "logs_grouped": 206,
+        "noise_reduction_percent": 80.8
+      },
+      "status": "active",
+      "category": "error_rate",
+      "root_cause_service": "analytics-service",
+      "symptom_services": [
+        "payment-service",
+        "notification-service",
+        "api-gateway",
+        "search-service",
+        "user-service",
+        "recommendation-service",
+        "auth-service",
+        "inventory-service",
+        "order-service"
+      ],
+      "cascading_failure": false,
+      "matched_rules": [],
+      "auto_escalate": false,
+      "detected_at": "2025-10-07T14:49:11Z",
+      "resolved_at": null,
+      "severity_history": [
+        {
+          "at": "2025-10-07T14:49:11Z",
+          "severity": "MEDIUM"
+        }
+      ]
+    }
+  ],
+  "services": [
+    {
+      "name": "api-gateway",
+      "events": 765,
+      "errors": 87,
+      "warnings": 45,
+      "error_rate_percent": 11.373,
+      "expected_error_rate_percent": 0.1,
+      "trend_percent": 11272.5,
+      "status": "CRITICAL"
+    },
+    {
+      "name": "order-service",
+      "events": 734,
+      "errors": 56,
+      "warnings": 48,
+      "error_rate_percent": 7.629,
+      "expected_error_rate_percent": 0.1,
+      "trend_percent": 7529.4,
+      "status": "CRITICAL"
+    },
+    {
+      "name": "payment-service",
+      "events": 766,
+      "errors": 48,
+      "warnings": 61,
+      "error_rate_percent": 6.266,
+      "expected_error_rate_percent": 0.05,
+      "trend_percent": 12432.6,
+      "status": "CRITICAL"
+    },
+    {
+      "name": "user-service",
+      "events": 671,
+      "errors": 47,
+      "warnings": 26,
+      "error_rate_percent": 7.004,
+      "expected_error_rate_percent": 0.1,
+      "trend_percent": 6904.5,
+      "status": "CRITICAL"
+    },
+    {
+      "name": "inventory-service",
+      "events": 658,
+      "errors": 44,
+      "warnings": 28,
+      "error_rate_percent": 6.687,
+      "expected_error_rate_percent": 0.1,
+      "trend_percent": 6586.9,
+      "status": "CRITICAL"
+    },
+    {
+      "name": "auth-service",
+      "events": 664,
+      "errors": 34,
+      "warnings": 30,
+      "error_rate_percent": 5.12,
+      "expected_error_rate_percent": 0.1,
+      "trend_percent": 5020.5,
+      "status": "WARNING"
+    },
+    {
+      "name": "analytics-service",
+      "events": 646,
+      "errors": 31,
+      "warnings": 23,
+      "error_rate_percent": 4.799,
+      "expected_error_rate_percent": 1.0,
+      "trend_percent": 379.9,
+      "status": "WARNING"
+    },
+    {
+      "name": "search-service",
+      "events": 705,
+      "errors": 30,
+      "warnings": 56,
+      "error_rate_percent": 4.255,
+      "expected_error_rate_percent": 0.5,
+      "trend_percent": 751.1,
+      "status": "WARNING"
+    },
+    {
+      "name": "recommendation-service",
+      "events": 709,
+      "errors": 28,
+      "warnings": 30,
+      "error_rate_percent": 3.949,
+      "expected_error_rate_percent": 1.0,
+      "trend_percent": 294.9,
+      "status": "WARNING"
+    },
+    {
+      "name": "notification-service",
+      "events": 693,
+      "errors": 20,
+      "warnings": 36,
+      "error_rate_percent": 2.886,
+      "expected_error_rate_percent": 1.0,
+      "trend_percent": 188.6,
+      "status": "WARNING"
+    },
+    {
+      "name": "web-app",
+      "events": 2661,
+      "errors": 20,
+      "warnings": 0,
+      "error_rate_percent": 0.752,
+      "expected_error_rate_percent": 0.5,
+      "trend_percent": 50.3,
+      "status": "CRITICAL"
+    },
+    {
+      "name": "database",
+      "events": 52,
+      "errors": 1,
+      "warnings": 30,
+      "error_rate_percent": 1.923,
+      "expected_error_rate_percent": 0.01,
+      "trend_percent": 19130.8,
+      "status": "CRITICAL"
+    },
+    {
+      "name": "payment-provider",
+      "events": 1,
+      "errors": 1,
+      "warnings": 0,
+      "error_rate_percent": 100.0,
+      "expected_error_rate_percent": 0.5,
+      "trend_percent": 19900.0,
+      "status": "CRITICAL"
+    }
+  ],
+  "metrics": {
+    "processing_time_ms": 279,
+    "memory_usage_mb": 23.7,
+    "lines_per_second": 35830
+  },
+  "analyzer_version": "1.0.0"
+}
