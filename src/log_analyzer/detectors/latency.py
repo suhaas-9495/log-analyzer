@@ -50,6 +50,7 @@ class _Series:
 
 @dataclass(frozen=True, slots=True)
 class _Assessment:
+    sparse: bool  # baseline taken from the window itself (no prior history)
     baseline: float
     current: float
     ratio: float
@@ -132,9 +133,10 @@ class LatencyDetector:
         window = points[-size:]
         history = [v for _, v in points[:-size]]
         values = [v for _, v in window]
+        sparse = len(history) < self._min_samples
         if series.frozen_baseline is not None:
             baseline = series.frozen_baseline
-        elif len(history) >= self._min_samples:
+        elif not sparse:
             baseline = median(history)
         else:
             baseline = median(values[: max(1, size // 3)])
@@ -144,6 +146,7 @@ class LatencyDetector:
         current = median(recent)
         elevated = sum(1 for v in recent if v >= self._ratio * baseline)
         return _Assessment(
+            sparse=sparse,
             baseline=baseline,
             current=current,
             ratio=current / baseline,
@@ -192,6 +195,8 @@ class LatencyDetector:
                 "eta_to_threshold_s": round(eta, 1) if eta is not None else None,
                 "threshold_ms": self._hard_threshold,
                 "window_start": a.window[0][0],
+                "samples": len(a.window),
+                "sparse": a.sparse,
             },
             title=f"Performance Degradation ({sample.label})",
             probable_cause=(

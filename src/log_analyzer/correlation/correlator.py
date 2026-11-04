@@ -105,7 +105,7 @@ class Correlator:
         self._grouping = config.windows.alert_grouping
         # Background noise is a *condition*, not a burst: keep its bucket open for a full
         # baseline window of quiet so intermittent spikes do not make the alert flap.
-        self._noise_idle = max(config.windows.alert_grouping, config.windows.error_rate_baseline)
+        self._noise_idle = max(config.windows.alert_grouping, config.windows.noise_hold)
         self._cooldown = config.windows.alert_cooldown
         self._reevaluate_after = config.windows.alert_grouping / 2
         self._open: list[Incident] = []
@@ -206,9 +206,10 @@ class Correlator:
             and not inc.unexplained
             and (signal.is_weak or signal.category in _CORRELATABLE)
             and (
-                # a spike is "explained" only by a strong incident; other strong-ish
-                # signals need a confirmed one; plain weak errors join any.
-                self._strong(inc, self._assessments.get(inc.id))
+                # A spike is "explained" by an incident that is already alerting on the
+                # service or is strong; other correlatable signals need a confirmed
+                # incident; plain weak errors join any incident of their service.
+                (inc.alert is not None or self._strong(inc, self._assessments.get(inc.id)))
                 if spike
                 else (inc.confirmed or signal.is_weak)
             )
@@ -377,7 +378,7 @@ class Correlator:
                 # evidence keeps it out of the noise (checked without running RCA).
                 if (
                     self._config.correlation.inhibit_during_unexplained
-                    and not _METRIC_DETECTORS & incident.kinds.keys()
+                    and self._metric_evidence(incident) != "dense"
                 ):
                     incident.inhibited_by = noise
                 continue
@@ -443,7 +444,9 @@ class Correlator:
             return False
         if self._inhibited(incident, assessment):
             return False
-        if assessment.cascade or any(s.has_detector for s in incident.services.values()):
+        # Metric detectors (latency trend, saturation) and the noise bucket alert on their
+        # own; an error-rate spike adds evidence to an incident but never pages for it.
+        if assessment.cascade or incident.unexplained or _METRIC_DETECTORS & incident.kinds.keys():
             return True
         needed = incident.min_occurrences_override or self._config.thresholds.min_occurrences
         if len(incident.services) > 1:
@@ -469,7 +472,8 @@ class Correlator:
         """
         if incident.unexplained:
             return False
-        if _METRIC_DETECTORS & incident.kinds.keys():
+        metric = self._metric_evidence(incident)
+        if metric == "dense" or (metric == "sparse" and not self._broad_noise_active()):
             return True
         if assessment is None or assessment.root.inferred:
             return False
@@ -479,6 +483,26 @@ class Correlator:
         named = any(dst == assessment.root.service for _src, dst in incident.edges)
         burst = incident.burst(self._config.thresholds.min_occurrences) <= self._cascade_window
         return root is not None and root.self_evidence >= 1.0 and named and burst
+
+    @staticmethod
+    def _metric_evidence(incident: Incident) -> str:
+        """``dense`` (saturation, or a latency trend over real history), ``sparse`` (a
+        latency trend judged from a handful of samples) or ``none``."""
+        found = "none"
+        for (_svc, kind), signal in incident.latest_detector.items():
+            if kind == "resource_saturation" or (
+                kind == "latency_degradation" and not signal.attributes.get("sparse")
+            ):
+                return "dense"
+            if kind == "latency_degradation":
+                found = "sparse"
+        return found
+
+    def _broad_noise_active(self) -> bool:
+        return any(
+            inc.unexplained and inc.alert is not None and self._covers(inc, inc)
+            for inc in self._open
+        )
 
     def _inhibitable(self, incident: Incident, assessment: Assessment) -> bool:
         """Weak incidents can be absorbed by active background noise; strong ones page."""
@@ -499,9 +523,13 @@ class Correlator:
         return False
 
     def _covers(self, noise: Incident, incident: Incident) -> bool:
-        """Noise covers an incident on a shared service, or everywhere once it is broad."""
-        broad = len(noise.services) >= self._config.thresholds.cascade_min_services
-        return broad or bool(noise.services.keys() & incident.services.keys())
+        """Only *broad* noise (several unrelated services) inhibits other incidents.
+
+        A single service with an unexplained error rate is not "background noise"; its
+        own incidents keep their specific alerts.
+        """
+        del incident  # coverage is platform-wide once the noise is broad
+        return len(noise.services) >= self._config.thresholds.cascade_min_services
 
     def _is_diverse(self, incident: Incident) -> bool:
         if incident.log_events == 0:

@@ -1,0 +1,6 @@
+2024-01-10 09:00:00 INFO [api] Request processed in 145ms
+2024-01-10 09:05:00 INFO [api] Request processed in 178ms
+2024-01-10 09:10:00 INFO [api] Request processed in 234ms
+2024-01-10 09:15:00 WARN [api] Request processed in 567ms
+2024-01-10 09:20:00 WARN [api] Request processed in 892ms
+2024-01-10 09:25:00 ERROR [api] Request timeout after 1000ms

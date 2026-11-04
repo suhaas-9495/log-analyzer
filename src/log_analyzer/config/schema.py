@@ -29,6 +29,7 @@ class WindowsConfig:
     error_rate_current: float = 60.0  # "current" error-rate window compared against the baseline
     latency_trend: float = 1800.0  # max age of latency samples kept for trend detection
     alert_cooldown: float = 900.0  # a resolved alert re-opens (not re-fires) within this period
+    noise_hold: float = 900.0  # broad background noise stays "active" this long after its last spike
     bucket_seconds: float = 5.0  # resolution of the error-rate ring buffers
     dashboard: float = 300.0  # default live-dashboard window in streaming mode
 
@@ -45,7 +46,7 @@ class ThresholdsConfig:
     latency_min_samples: int = 4
     latency_window_samples: int = 20
     latency_trend_min_tau: float = 0.5
-    latency_trend_min_z: float = 2.5
+    latency_trend_min_z: float = 2.3
     latency_sustained_fraction: float = 0.7
     latency_floor_ms: float = 100.0
     latency_max_samples: int = 64

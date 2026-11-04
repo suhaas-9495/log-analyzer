@@ -179,6 +179,14 @@ class AlertBuilder:
             return f"Elevated Error Rate Across {n} Services"
         if category == "error_rate":
             return f"Increased Error Rate in {svc}"
+        if root.inferred:
+            # The root never logged; describe it from its callers' point of view.
+            callers = sorted({src for src, dst in incident.edges if dst == root.service})
+            caller = callers[0] if callers else root.service
+            via = blaming_signal(incident, root.service)
+            cause = title_case(via.title) if via and via.title else "Failures"
+            who = humanize(caller) if len(callers) == 1 else f"{len(callers)} Services"
+            return f"{cause} in {who} - {svc} Unreachable"
         cause = title_case(primary.title) if primary and primary.title else "Errors"
         if category == "cascade":
             return f"{svc} {cause} - Cascading Failure Across {n} Services"
@@ -404,6 +412,10 @@ class AlertBuilder:
         for (svc, _kind), sig in sorted(incident.first_signals.items()):
             if svc == root.service and sig is not primary:
                 actions.extend(sig.actions)
+        if root.inferred:
+            via = blaming_signal(incident, root.service)
+            if via is not None:
+                actions.extend(via.actions)
         if a.cascade:
             actions.extend(self._cascade_actions)
         if not actions:
@@ -491,6 +503,12 @@ def primary_signal(incident: Incident, service: str) -> Signal | None:
         candidates,
         key=lambda s: (self_evidence(s), s.severity, _SOURCE_RANK[s.source], -s.ts),
     )
+
+
+def blaming_signal(incident: Incident, dependency: str) -> Signal | None:
+    """The most severe signal in which another service names ``dependency`` as failing."""
+    blaming = [s for s in incident.first_signals.values() if dependency in s.targets]
+    return max(blaming, key=lambda s: (s.severity, -s.ts)) if blaming else None
 
 
 def _preview(message: str) -> str:

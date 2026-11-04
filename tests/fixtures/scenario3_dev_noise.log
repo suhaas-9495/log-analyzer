@@ -1,0 +1,7 @@
+2024-01-10 10:00:00 DEBUG [dev-server] Starting hot reload
+2024-01-10 10:00:01 ERROR [production-api] Database connection failed
+2024-01-10 10:00:02 DEBUG [dev-server] Compilation complete
+2024-01-10 10:00:03 INFO [production-api] Retry connection
+2024-01-10 10:00:04 ERROR [production-api] Database connection failed
+2024-01-10 10:00:05 DEBUG [localhost] Test endpoint called
+2024-01-10 10:00:06 ERROR [production-api] Database connection failed

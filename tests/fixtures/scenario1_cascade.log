@@ -1,0 +1,7 @@
+2024-01-10 10:00:00 INFO [database] Connection pool: 50/100 active
+2024-01-10 10:00:30 INFO [database] Connection pool: 75/100 active
+2024-01-10 10:01:00 WARN [database] Connection pool: 95/100 active
+2024-01-10 10:01:15 ERROR [payment-service] Connection pool exhausted
+2024-01-10 10:01:16 ERROR [api-gateway] Connection timeout to payment-service
+2024-01-10 10:01:16 ERROR [web-app] Payment request failed
+2024-01-10 10:01:17 ERROR [order-service] Cannot process order: payment unavailable

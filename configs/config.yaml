@@ -17,6 +17,7 @@ analyzer:
     error_rate_current: 60     # "now" window compared against the baseline
     latency_trend: 30m         # max age of latency samples used for trend detection
     alert_cooldown: 15m        # a recurring detector condition re-opens its alert instead of re-paging
+    noise_hold: 15m            # broad "no common cause" noise stays active this long after its last spike
     bucket_seconds: 5          # resolution of the error-rate ring buffers
     dashboard: 5m              # live dashboard window when reading a stream
 
@@ -31,7 +32,7 @@ analyzer:
     latency_degradation_ratio: 2.0    # newest samples must be 2x the baseline median ...
     latency_sustained_fraction: 0.7   # ... for 70% of them ...
     latency_trend_min_tau: 0.5        # ... while rising monotonically (Kendall tau) ...
-    latency_trend_min_z: 2.5          # ... with statistical significance (Mann-Kendall z)
+    latency_trend_min_z: 2.3          # ... with statistical significance (Mann-Kendall z, p~0.01)
     latency_floor_ms: 100             # ignore "degradations" that stay this fast
     latency_window_samples: 20
     latency_min_samples: 4
