@@ -51,6 +51,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ConfigError, PluginError) as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return EXIT_ERROR
+    except BrokenPipeError:
+        # The reader went away (e.g. `log-analyzer ... | head`): stop quietly, like other
+        # Unix tools, and keep Python from complaining while flushing stdout at exit.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        return EXIT_OK
     except OSError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR

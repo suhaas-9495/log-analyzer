@@ -356,3 +356,51 @@ def test_unreadable_and_malformed_files(tmp_path: Path) -> None:
     scalar.write_text("just a string")
     with pytest.raises(ConfigError, match="top level must be a mapping"):
         load_config(scalar)
+
+
+def test_pasting_spec_rules_keeps_builtin_metadata() -> None:
+    """Same-name rules merge field by field: the spec's short rules keep our runbooks."""
+    config = build_config(
+        {
+            "patterns": [
+                {
+                    "name": "connection_timeout",
+                    "regex": "Connection timeout to ([\\w-]+)",
+                    "severity": "HIGH",
+                    "group_by": ["service", "target_service"],
+                },
+                {
+                    "name": "memory_exhaustion",
+                    "keywords": ["OutOfMemoryError", "memory exhausted", "heap space"],
+                    "severity": "CRITICAL",
+                },
+            ]
+        }
+    )
+    by_name = {p.name: p for p in config.patterns}
+    timeout = by_name["connection_timeout"]
+    assert timeout.regex is not None
+    assert timeout.regex.pattern == "Connection timeout to ([\\w-]+)"  # user's regex
+    assert timeout.category is Category.DEPENDENCY  # inherited
+    assert timeout.actions  # inherited runbook
+    assert by_name["memory_exhaustion"].min_occurrences == 1
+
+
+def test_new_rule_category_is_inferred_from_targets() -> None:
+    config = build_config(
+        {
+            "patterns": [
+                {
+                    "name": "reach",
+                    "regex": "cannot reach (?P<target_service>[\\w-]+)",
+                    "severity": "HIGH",
+                },
+                {"name": "static", "regex": "queue full", "target": "broker", "severity": "HIGH"},
+                {"name": "plain", "regex": "oops", "severity": "HIGH"},
+            ]
+        }
+    )
+    by_name = {p.name: p for p in config.patterns}
+    assert by_name["reach"].category is Category.DEPENDENCY
+    assert by_name["static"].category is Category.DEPENDENCY
+    assert by_name["plain"].category is Category.APPLICATION

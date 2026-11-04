@@ -13,12 +13,17 @@ step "1. Spec Scenario 1 - cascade failure (expect ONE critical alert, root caus
 log-analyzer --file tests/fixtures/scenario1_cascade.log --config "$CONFIG" --events
 
 step "2. Spec Scenario 2 - gradual degradation (expect MEDIUM alert before the 1000ms timeout)"
-log-analyzer --file tests/fixtures/scenario2_degradation.log --config "$CONFIG" --events \
-  | head -n 4
+log-analyzer --file tests/fixtures/scenario2_degradation.log --config "$CONFIG" --events
 
 step "3. Spec Scenario 3 - dev noise is ignored, production issue alerts"
 log-analyzer --file tests/fixtures/scenario3_dev_noise.log --config "$CONFIG" --format json \
-  | python3 -c 'import json,sys; r=json.load(sys.stdin); s=r["statistics"]; print(f"ignored={s[\"logs_ignored\"]} alerts={[a[\"title\"] for a in r[\"alerts\"]]}")'
+  | python3 -c '
+import json, sys
+report = json.load(sys.stdin)
+print("ignored lines:", report["statistics"]["logs_ignored"])
+for alert in report["alerts"]:
+    print("[" + alert["severity"] + "] " + alert["title"])
+'
 
 step "4. Live stream (stdin): the 10k sample piped in, alerts printed as they happen"
 cat data/sample/test_logs.txt | log-analyzer --config "$CONFIG" --color never \
@@ -44,7 +49,13 @@ PY
 step "7. Scenario 4 - 100,000 generated lines (time and memory)"
 log-analyzer generate --lines 100000 --seed 42 -o "$OUT/100k.log"
 log-analyzer --file "$OUT/100k.log" --config "$CONFIG" --format json \
-  | python3 -c 'import json,sys; r=json.load(sys.stdin); m=r["metrics"]; s=r["statistics"]; print(f"{s[\"total_logs\"]:,} lines in {m[\"processing_time_ms\"]} ms, peak {m[\"memory_usage_mb\"]} MB, {s[\"alerts_generated\"]} alerts, {s[\"noise_reduction_percent\"]}% noise reduction")'
+  | python3 -c '
+import json, sys
+report = json.load(sys.stdin)
+m, s = report["metrics"], report["statistics"]
+print(s["total_logs"], "lines in", m["processing_time_ms"], "ms; peak", m["memory_usage_mb"], "MB;",
+      s["alerts_generated"], "alerts;", s["noise_reduction_percent"], "% noise reduction")
+'
 
 step "8. HTTP API: POST /analyze"
 PORT=${PORT:-18080}

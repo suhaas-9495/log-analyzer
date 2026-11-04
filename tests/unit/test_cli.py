@@ -200,3 +200,12 @@ def test_version(capsys: pytest.CaptureFixture[str]) -> None:
         cli.main(["--version"])
     assert info.value.code == 0
     assert __version__ in capsys.readouterr().out
+
+
+def test_broken_pipe_exits_quietly(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(_argv: list[str]) -> int:
+        raise BrokenPipeError
+
+    monkeypatch.setattr(cli, "_analyze", boom)
+    monkeypatch.setattr("os.dup2", lambda *_args: None)
+    assert cli.main(["-f", SCENARIO1]) == 0

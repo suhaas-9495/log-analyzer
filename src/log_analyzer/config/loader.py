@@ -7,9 +7,11 @@ Precedence (lowest to highest):
 
 Sections may live at the top level *or* under ``analyzer:`` - the problem statement
 shows both styles, so both are accepted (defining the same section twice is an error).
-``patterns``, ``metrics`` and ``alert_rules`` merge **by name**: a user entry with the
-same name replaces the built-in one, ``enabled: false`` removes it, new entries are
-evaluated before the built-ins. Unknown keys are rejected so typos never pass silently.
+``patterns``, ``metrics`` and ``alert_rules`` merge **by name**: in a user entry with the
+same name as a built-in, the keys you set override the built-in's and the rest are
+inherited (so pasting the spec's short ``connection_timeout`` rule keeps the built-in
+category and runbook); ``enabled: false`` removes an entry; new entries are evaluated
+before the built-ins. Unknown keys are rejected so typos never pass silently.
 """
 
 from __future__ import annotations
@@ -171,7 +173,7 @@ def _merge_named(base: list[Any], override: Any, path: str) -> list[dict[str, An
             replaced[item["name"]] = item
         else:
             new.append(item)
-    kept = [replaced.get(b.get("name", ""), b) for b in base]
+    kept = [{**b, **replaced[b["name"]]} if b.get("name") in replaced else b for b in base]
     return new + kept
 
 
@@ -415,7 +417,16 @@ def _build_pattern(s: _Section) -> PatternRule:
     group_by = s.strings("group_by", ("service",))
     if regex is not None:
         _check_captures(s, regex, captures, threshold)
-    default_category = Category.AVAILABILITY if condition else Category.APPLICATION
+    names_target = bool(s.raw("target")) or "target_service" in (
+        set(captures) | set(group_by) | set(regex.groupindex if regex else ())
+    )
+    default_category = (
+        Category.AVAILABILITY
+        if condition
+        else Category.DEPENDENCY
+        if names_target
+        else Category.APPLICATION
+    )
     try:
         category = Category.parse(s.string("category", default_category.value))
     except ValueError as exc:

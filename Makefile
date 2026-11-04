@@ -59,7 +59,7 @@ check: lint typecheck test ## Lint + type check + tests (what CI runs)
 data: $(LARGE) ## Unpack the 100k-line sample log
 
 $(LARGE): data/sample/large_test_logs.txt.zip
-	$(BIN)/python -c "import zipfile; zipfile.ZipFile('$<').extract('large_test_logs.txt', 'data/sample')"
+	$(PYTHON) -c "import zipfile; zipfile.ZipFile('$<').extract('large_test_logs.txt', 'data/sample')"
 	@touch $@
 
 run: install ## Analyze FILE (default: 10k sample) and print the dashboard

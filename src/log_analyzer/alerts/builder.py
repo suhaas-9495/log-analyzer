@@ -189,7 +189,8 @@ class AlertBuilder:
             return f"{cause} in {who} - {svc} Unreachable"
         cause = title_case(primary.title) if primary and primary.title else "Errors"
         if category == "cascade":
-            return f"{svc} {cause} - Cascading Failure Across {n} Services"
+            lead = cause if svc.lower() in cause.lower() else f"{svc} {cause}"
+            return f"{lead} - Cascading Failure Across {n} Services"
         if category == "performance":
             label = str(primary.attributes.get("label", "latency")) if primary else "latency"
             where = "" if root.service.lower() in label.lower() else f" on {svc}"

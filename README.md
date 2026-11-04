@@ -48,7 +48,7 @@ Deeper documents:
 ```bash
 make install        # creates .venv and installs the package with dev tools
 make run            # analyze data/sample/test_logs.txt -> console dashboard
-make check          # lint + strict type check + 243 tests (coverage >= 85% enforced)
+make check          # lint + strict type check + 246 tests (coverage >= 85% enforced)
 make demo           # scripted walkthrough: the 4 spec scenarios, streaming, JSON, API
 ```
 
@@ -232,7 +232,7 @@ Scaling to millions of lines per minute is covered in
 
 ## Testing
 
-`make test` runs 243 tests with branch coverage (currently about 96%; the build fails
+`make test` runs 246 tests with branch coverage (currently about 96%; the build fails
 below 85%). `make check` adds `ruff` lint/format and `mypy --strict`.
 
 - **The four spec scenarios** use the spec's exact log lines ([`tests/integration/test_spec_scenarios.py`](tests/integration/test_spec_scenarios.py)):

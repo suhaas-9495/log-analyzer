@@ -83,7 +83,7 @@ class ConsoleRenderer:
         )
         lines.append(_LIGHT)
         for svc in result.services[: self._max_rows]:
-            trend = _trend(svc.trend_percent)
+            trend = _trend(svc.trend_percent if svc.errors else 0.0)
             status = self._paint(svc.status, _STATUS_COLOR.get(svc.status, ""))
             lines.append(
                 f"{svc.name[:24]:<24} | {svc.errors:>7,} | {svc.error_rate:>9.2f}% | "
